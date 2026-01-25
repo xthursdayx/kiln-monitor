@@ -15,7 +15,7 @@ This custom integration allows you to monitor your Bartlett Instruments Kiln usi
 3. Click the three dots in the top right and select **Custom repositories**.
 4. Add this repository:  
    ```
-   https://github.com/igorparsadanov/kiln-monitor
+   https://github.com/MrWhoThis/kiln-monitor
    ```
    as an **Integration**.
 5. Search for "Kiln Monitor" in HACS and install it.
