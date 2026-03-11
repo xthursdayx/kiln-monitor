@@ -4,9 +4,9 @@
   "codeowners": ["parsadanov@gmail.com"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/igorparsadanov/kiln-monitor",
+  "documentation": "https://github.com/xthursdayx/kiln-monitor",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "requirements": [],
-  "version": "2025.11.1"
+  "version": "2026.03.9"
 }
