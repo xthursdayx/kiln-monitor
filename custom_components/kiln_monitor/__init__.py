@@ -1,55 +1,86 @@
-"""Kiln Monitor integration."""
+"""The Kiln Monitor integration."""
 
 from __future__ import annotations
 
-import aiohttp
+import logging
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import KilnAPI
-from .coordinator import KilnCoordinator
-from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD
+from .const import (
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
+    DOMAIN,
+)
+from .coordinator import KilnDataCoordinator
 
-PLATFORMS = ["sensor", "binary_sensor"]
+_LOGGER = logging.getLogger(__name__)
+
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Kiln Monitor from a config entry."""
-
-    hass.data.setdefault(DOMAIN, {})
-
-    session = aiohttp.ClientSession()
-
+    session = async_get_clientsession(hass)
     api = KilnAPI(
-        session,
-        entry.data[CONF_EMAIL],
-        entry.data[CONF_PASSWORD],
+        session=session,
+        email=entry.data[CONF_EMAIL],
+        password=entry.data[CONF_PASSWORD],
     )
 
-    await api.authenticate()
+    try:
+        kilns = await api.fetch_kilns()
+    except Exception as exc:
+        raise ConfigEntryNotReady(f"Could not fetch kiln list: {exc}") from exc
 
-    kiln = await api.fetch_summary_list()
+    if not kilns:
+        raise ConfigEntryNotReady("No kilns found for this account")
 
-    coordinator = KilnCoordinator(hass, api, kiln)
+    update_interval = entry.options.get(
+        CONF_UPDATE_INTERVAL,
+        DEFAULT_UPDATE_INTERVAL,
+    )
 
-    await coordinator.async_config_entry_first_refresh()
+    coordinators: list[KilnDataCoordinator] = []
+    for kiln_info in kilns:
+        coordinator = KilnDataCoordinator(
+            hass=hass,
+            api=api,
+            kiln_info=kiln_info,
+            update_interval_minutes=update_interval,
+        )
+        await coordinator.async_config_entry_first_refresh()
+        coordinators.append(coordinator)
 
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = coordinators
 
+    entry.async_on_unload(entry.add_update_listener(update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Unload config entry."""
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+    return unload_ok
 
-    unload_ok = await hass.config_entries.async_unload_platforms(
-        entry, PLATFORMS
+
+async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options updates."""
+    coordinators: list[KilnDataCoordinator] = hass.data[DOMAIN][entry.entry_id]
+    update_interval = entry.options.get(
+        CONF_UPDATE_INTERVAL,
+        DEFAULT_UPDATE_INTERVAL,
     )
 
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
-
-    return unload_ok
+    for coordinator in coordinators:
+        coordinator.update_interval_minutes(update_interval)

@@ -1,4 +1,6 @@
-"""Constants for Kiln Monitor."""
+"""Constants for the Kiln Monitor integration."""
+
+from __future__ import annotations
 
 from datetime import timedelta
 
@@ -14,5 +16,8 @@ CONF_PASSWORD = "password"
 CONF_UPDATE_INTERVAL = "update_interval"
 
 DEFAULT_UPDATE_INTERVAL = 5  # minutes
-
 SCAN_INTERVAL = timedelta(minutes=DEFAULT_UPDATE_INTERVAL)
+
+# Refresh tuning
+IDLE_VIEW_REFRESH_EVERY = 6
+IDLE_SUMMARY_REFRESH_EVERY = 12
