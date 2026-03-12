@@ -7,6 +7,7 @@ from datetime import timedelta
 DOMAIN = "kiln_monitor"
 
 LOGIN_URL = "https://bartinst-user-service-prod.herokuapp.com/login"
+SETTINGS_URL = "https://kiln.bartinst.com/kilns/settings"
 DATA_URL = "https://kiln.bartinst.com/kilns/data"
 STATUS_URL = "https://kiln.bartinst.com/kilnaid-data/status"
 VIEW_URL = "https://kiln.bartinst.com/kilns/view"

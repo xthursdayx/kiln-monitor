@@ -8,7 +8,7 @@ from typing import Any
 
 from aiohttp import ClientError, ClientSession
 
-from .const import DATA_URL, LOGIN_URL, STATUS_URL, VIEW_URL
+from .const import DATA_URL, LOGIN_URL, SETTINGS_URL, STATUS_URL, VIEW_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ class KilnAPI:
         self._email = email
         self._password = password
         self._token: str | None = None
+        self._login_data: dict[str, Any] | None = None
 
     async def authenticate(self) -> None:
         """Authenticate and cache token."""
@@ -80,6 +81,7 @@ class KilnAPI:
             raise KilnAuthError("Authentication token missing from response")
 
         self._token = token
+        self._login_data = data
 
     async def _ensure_authenticated(self) -> None:
         """Authenticate if not already authenticated."""
@@ -145,42 +147,89 @@ class KilnAPI:
 
         raise KilnConnectionError(f"Unable to complete request to {url}")
 
+    def _normalize_kiln(self, item: dict[str, Any]) -> dict[str, Any] | None:
+        """Normalize kiln data from various endpoint shapes."""
+        external_id = (
+            item.get("external_id")
+            or item.get("externalId")
+            or item.get("kiln_id")
+        )
+        serial_number = (
+            item.get("serial_number")
+            or item.get("serialNumber")
+        )
+        name = (
+            item.get("name")
+            or item.get("list", {}).get("name")
+            or item.get("settings", {}).get("name")
+            or "Kiln"
+        )
+
+        if not external_id or not serial_number:
+            return None
+
+        return {
+            "external_id": external_id,
+            "serial_number": serial_number,
+            "name": name,
+            "initial_summary": item if "list" in item or "settings" in item else {},
+        }
+
+    def _extract_kilns_recursive(self, obj: Any) -> list[dict[str, Any]]:
+        """Recursively search nested responses for kiln-like dicts."""
+        found: list[dict[str, Any]] = []
+
+        if isinstance(obj, dict):
+            normalized = self._normalize_kiln(obj)
+            if normalized:
+                found.append(normalized)
+
+            for value in obj.values():
+                found.extend(self._extract_kilns_recursive(value))
+
+        elif isinstance(obj, list):
+            for item in obj:
+                found.extend(self._extract_kilns_recursive(item))
+
+        return found
+
+    def _dedupe_kilns(self, kilns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Deduplicate by external_id + serial_number."""
+        deduped: dict[tuple[str, str], dict[str, Any]] = {}
+        for kiln in kilns:
+            key = (kiln["external_id"], kiln["serial_number"])
+            deduped[key] = kiln
+        return list(deduped.values())
+
     async def fetch_kilns(self) -> list[dict[str, Any]]:
-        """Fetch and normalize the account's kilns.
+        """Discover kilns for the authenticated account."""
+        await self._ensure_authenticated()
 
-        This relies on the same discovery approach the current repo was already
-        attempting: POST /kilns/data with an empty externalIds list.
-        """
-        data = await self._post_json(DATA_URL, {"externalIds": []})
+        discovered: list[dict[str, Any]] = []
 
-        if not isinstance(data, list):
-            raise KilnConnectionError("Unexpected kiln discovery response format")
+        if self._login_data:
+            discovered.extend(self._extract_kilns_recursive(self._login_data))
 
-        kilns: list[dict[str, Any]] = []
-        for item in data:
-            if not isinstance(item, dict):
-                continue
+        discovery_attempts: list[tuple[str, dict[str, Any]]] = [
+            (DATA_URL, {"externalIds": []}),
+            (SETTINGS_URL, {}),
+            (SETTINGS_URL, {"kiln_ids": []}),
+        ]
 
-            external_id = item.get("externalId")
-            serial_number = item.get("serialNumber")
-            name = (
-                item.get("list", {}).get("name")
-                or item.get("settings", {}).get("name")
-                or "Kiln"
-            )
+        for url, payload in discovery_attempts:
+            try:
+                data = await self._post_json(url, payload)
+                discovered.extend(self._extract_kilns_recursive(data))
+            except Exception as exc:
+                _LOGGER.debug(
+                    "Kiln discovery attempt failed for %s %s: %s",
+                    url,
+                    payload,
+                    exc,
+                )
 
-            if not external_id or not serial_number:
-                continue
-
-            kilns.append(
-                {
-                    "external_id": external_id,
-                    "serial_number": serial_number,
-                    "name": name,
-                    "initial_summary": item,
-                }
-            )
-
+        kilns = self._dedupe_kilns(discovered)
+        _LOGGER.debug("Discovered %d kilns", len(kilns))
         return kilns
 
     async def fetch_summary(self, external_id: str) -> dict[str, Any]:
