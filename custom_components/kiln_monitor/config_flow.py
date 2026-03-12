@@ -12,12 +12,12 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
-    DOMAIN,
-    LOGIN_URL,
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
+    DOMAIN,
+    LOGIN_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate the user input allows us to connect."""
+    """Validate credentials."""
     session = async_get_clientsession(hass)
 
     login_headers = {
@@ -69,9 +69,8 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
             auth_data = await resp.json()
             token = auth_data.get("authentication_token")
-
             if not token:
-                raise InvalidAuth("Authentication token not found in response")
+                raise InvalidAuth("Authentication token missing from response")
 
     except InvalidAuth:
         raise
@@ -88,7 +87,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
@@ -106,11 +106,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(user_input[CONF_EMAIL])
                 self._abort_if_unique_id_configured()
-
-                return self.async_create_entry(
-                    title=info["title"],
-                    data=user_input,
-                )
+                return self.async_create_entry(title=info["title"], data=user_input)
 
         return self.async_show_form(
             step_id="user",
@@ -123,21 +119,22 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
-        """Create the options flow."""
+        """Create options flow."""
         return OptionsFlowHandler(config_entry)
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options flow for Kiln Monitor."""
+    """Options flow for Kiln Monitor."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
 
     async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Manage the options."""
+        """Manage options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
