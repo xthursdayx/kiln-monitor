@@ -52,7 +52,7 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
         self._attr_device_class = description.device_class
         self._attr_state_class = description.state_class
         self._attr_entity_category = description.entity_category
-        self._attr_entity_registry_enabled_default = description.enabled_by_default
+        self._attr_entity_registry_enabled_default = description.entity_registry_enabled_default
 
     @property
     def device_info(self) -> DeviceInfo:
