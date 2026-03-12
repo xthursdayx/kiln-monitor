@@ -11,7 +11,14 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN, LOGIN_URL, CONF_EMAIL, CONF_PASSWORD, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+from .const import (
+    DOMAIN,
+    LOGIN_URL,
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +33,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
     session = async_get_clientsession(hass)
-    
+
     login_headers = {
         "Accept": "application/json",
         "kaid-version": "kaid-plus",
@@ -35,32 +42,43 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         "Sec-Fetch-Mode": "cors",
         "Content-Type": "application/json",
         "Origin": "ionic://localhost",
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+        "User-Agent": (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+        ),
         "Connection": "keep-alive",
-        "Sec-Fetch-Dest": "empty"
+        "Sec-Fetch-Dest": "empty",
     }
 
     login_payload = {
         "email": data[CONF_EMAIL],
-        "password": data[CONF_PASSWORD]
+        "password": data[CONF_PASSWORD],
     }
 
     try:
-        async with session.post(LOGIN_URL, headers=login_headers, json=login_payload) as resp:
+        async with session.post(
+            LOGIN_URL,
+            headers=login_headers,
+            json=login_payload,
+            timeout=30,
+        ) as resp:
+            if resp.status == 401:
+                raise InvalidAuth("Invalid email or password")
             if resp.status != 200:
-                raise InvalidAuth(f"Login failed with status {resp.status}")
-            
+                raise CannotConnect(f"Login failed with status {resp.status}")
+
             auth_data = await resp.json()
             token = auth_data.get("authentication_token")
-            
+
             if not token:
                 raise InvalidAuth("Authentication token not found in response")
-                
+
+    except InvalidAuth:
+        raise
     except Exception as exc:
         _LOGGER.error("Failed to authenticate: %s", exc)
         raise CannotConnect from exc
 
-    # Return info that you want to store in the config entry.
     return {"title": f"Kiln Monitor ({data[CONF_EMAIL]})"}
 
 
@@ -74,7 +92,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
-        
+
         if user_input is not None:
             try:
                 info = await validate_input(self.hass, user_input)
@@ -82,18 +100,22 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
+            except Exception:
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                # Create a unique ID based on email to prevent duplicate entries
                 await self.async_set_unique_id(user_input[CONF_EMAIL])
                 self._abort_if_unique_id_configured()
-                
-                return self.async_create_entry(title=info["title"], data=user_input)
+
+                return self.async_create_entry(
+                    title=info["title"],
+                    data=user_input,
+                )
 
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+            step_id="user",
+            data_schema=STEP_USER_DATA_SCHEMA,
+            errors=errors,
         )
 
     @staticmethod
@@ -119,9 +141,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        # Get current update interval from options, fallback to default
         current_interval = self.config_entry.options.get(
-            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+            CONF_UPDATE_INTERVAL,
+            DEFAULT_UPDATE_INTERVAL,
         )
 
         return self.async_show_form(
