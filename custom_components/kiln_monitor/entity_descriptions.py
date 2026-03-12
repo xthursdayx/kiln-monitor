@@ -3,38 +3,33 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntityDescription,
+)
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.const import EntityCategory
 
 
 @dataclass(frozen=True, kw_only=True)
-class KilnSensorDescription:
+class KilnSensorDescription(SensorEntityDescription):
     """Description of a kiln sensor."""
 
-    key: str
-    name: str
     path: tuple[str, ...]
     fallback_paths: tuple[tuple[str, ...], ...] = ()
     value_type: type = str
-    native_unit_of_measurement: str | None = None
-    device_class: SensorDeviceClass | None = None
-    state_class: SensorStateClass | None = None
-    entity_category: EntityCategory | None = None
-    enabled_by_default: bool = True
     dynamic_temperature_unit: bool = False
     scale_divisor: float | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
-class KilnBinarySensorDescription:
+class KilnBinarySensorDescription(BinarySensorEntityDescription):
     """Description of a kiln binary sensor."""
-
-    key: str
-    name: str
-    device_class: BinarySensorDeviceClass | None = None
 
 
 SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
@@ -176,7 +171,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
         dynamic_temperature_unit=True,
     ),
     KilnSensorDescription(
@@ -187,7 +182,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         native_unit_of_measurement="A",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
     ),
     KilnSensorDescription(
         key="amperage_2",
@@ -197,7 +192,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         native_unit_of_measurement="A",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
     ),
     KilnSensorDescription(
         key="amperage_3",
@@ -207,7 +202,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         native_unit_of_measurement="A",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
     ),
     KilnSensorDescription(
         key="voltage_1",
@@ -217,7 +212,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         native_unit_of_measurement="V",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
         scale_divisor=100,
     ),
     KilnSensorDescription(
@@ -228,7 +223,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         native_unit_of_measurement="V",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
         scale_divisor=100,
     ),
     KilnSensorDescription(
@@ -239,7 +234,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         native_unit_of_measurement="V",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
         scale_divisor=100,
     ),
     KilnSensorDescription(
@@ -250,7 +245,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         native_unit_of_measurement="V",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
         scale_divisor=100,
     ),
     KilnSensorDescription(
@@ -261,7 +256,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         native_unit_of_measurement="V",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
     ),
     KilnSensorDescription(
         key="full_load_voltage",
@@ -271,7 +266,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         native_unit_of_measurement="V",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
     ),
     KilnSensorDescription(
         key="last_error_code",
@@ -279,7 +274,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         path=("view", "status", "diag", "last_err"),
         value_type=int,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
     ),
     KilnSensorDescription(
         key="firing_cost",
@@ -287,7 +282,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         path=("view", "status", "firing", "cost"),
         value_type=str,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
     ),
     KilnSensorDescription(
         key="max_temperature",
@@ -297,7 +292,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        enabled_by_default=False,
+        entity_registry_enabled_default=False,
         dynamic_temperature_unit=True,
     ),
     KilnSensorDescription(
@@ -332,9 +327,24 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
 )
 
 BINARY_SENSOR_DESCRIPTIONS: tuple[KilnBinarySensorDescription, ...] = (
-    KilnBinarySensorDescription(key="firing_active", name="Firing Active"),
-    KilnBinarySensorDescription(key="cooling_active", name="Cooling Active"),
-    KilnBinarySensorDescription(key="firing_complete", name="Firing Complete"),
-    KilnBinarySensorDescription(key="alarm_active", name="Alarm Active"),
-    KilnBinarySensorDescription(key="kiln_fault", name="Kiln Fault"),
+    KilnBinarySensorDescription(
+        key="firing_active",
+        name="Firing Active",
+    ),
+    KilnBinarySensorDescription(
+        key="cooling_active",
+        name="Cooling Active",
+    ),
+    KilnBinarySensorDescription(
+        key="firing_complete",
+        name="Firing Complete",
+    ),
+    KilnBinarySensorDescription(
+        key="alarm_active",
+        name="Alarm Active",
+    ),
+    KilnBinarySensorDescription(
+        key="kiln_fault",
+        name="Kiln Fault",
+    ),
 )
