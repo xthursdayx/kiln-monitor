@@ -364,12 +364,3 @@ Always monitor kiln firings responsibly.
 Pull requests are welcome.
 
 If you improve the integration or add features, please consider submitting a PR.
-
----
-
-If you'd like, the next step can be implementing the **two powerful features you requested**:
-
-* **Cooling rate sensor (°/hour)**
-* **Real-time firing curve chart using `/singleFiring`**
-
-Those will turn this into a **seriously powerful kiln analytics integration for Home Assistant**.
