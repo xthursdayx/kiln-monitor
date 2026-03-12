@@ -1,7 +1,6 @@
 {
   "domain": "kiln_monitor",
   "name": "Kiln Monitor",
-  "codeowners": ["parsadanov@gmail.com"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/xthursdayx/kiln-monitor",

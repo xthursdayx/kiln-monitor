@@ -1,33 +1,23 @@
 from homeassistant.components.sensor import SensorEntity
 
-from .entity_descriptions import SENSORS
-
 
 async def async_setup_entry(hass, entry, async_add_entities):
 
     coordinator = hass.data["kiln_monitor"][entry.entry_id]
 
-    sensors = []
-
-    for description in SENSORS:
-        sensors.append(KilnSensor(coordinator, description))
+    sensors = [
+        KilnTemperatureSensor(coordinator),
+    ]
 
     async_add_entities(sensors)
 
 
-class KilnSensor(SensorEntity):
+class KilnTemperatureSensor(SensorEntity):
 
-    def __init__(self, coordinator, description):
-
+    def __init__(self, coordinator):
         self.coordinator = coordinator
-        self.entity_description = description
+        self._attr_name = "Kiln Temperature"
 
     @property
     def native_value(self):
-
-        key = self.entity_description.key
-
-        if key in self.coordinator.data["status"]:
-            return self.coordinator.data["status"][key]
-
-        return None
+        return self.coordinator.data["status"]["t1"]

@@ -5,15 +5,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     coordinator = hass.data["kiln_monitor"][entry.entry_id]
 
-    sensors = [
-        KilnFiringBinarySensor(coordinator),
-        KilnFaultBinarySensor(coordinator),
-    ]
-
-    async_add_entities(sensors)
+    async_add_entities([
+        KilnFiringSensor(coordinator),
+        KilnFaultSensor(coordinator)
+    ])
 
 
-class KilnFiringBinarySensor(BinarySensorEntity):
+class KilnFiringSensor(BinarySensorEntity):
 
     def __init__(self, coordinator):
         self.coordinator = coordinator
@@ -24,7 +22,7 @@ class KilnFiringBinarySensor(BinarySensorEntity):
         return self.coordinator.data["status"]["mode"] == "Firing"
 
 
-class KilnFaultBinarySensor(BinarySensorEntity):
+class KilnFaultSensor(BinarySensorEntity):
 
     def __init__(self, coordinator):
         self.coordinator = coordinator

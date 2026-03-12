@@ -1,5 +1,7 @@
 """Constants for Kiln Monitor."""
 
+from datetime import timedelta
+
 DOMAIN = "kiln_monitor"
 
 LOGIN_URL = "https://bartinst-user-service-prod.herokuapp.com/login"
@@ -11,4 +13,6 @@ CONF_EMAIL = "email"
 CONF_PASSWORD = "password"
 CONF_UPDATE_INTERVAL = "update_interval"
 
-DEFAULT_SCAN_INTERVAL = 300
+DEFAULT_UPDATE_INTERVAL = 5  # minutes
+
+SCAN_INTERVAL = timedelta(minutes=DEFAULT_UPDATE_INTERVAL)

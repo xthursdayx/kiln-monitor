@@ -4,6 +4,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class KilnAPI:
+
     def __init__(self, session, email, password):
         self.session = session
         self.email = email
@@ -11,6 +12,7 @@ class KilnAPI:
         self.token = None
 
     async def authenticate(self):
+
         url = "https://bartinst-user-service-prod.herokuapp.com/login"
 
         payload = {
@@ -20,9 +22,11 @@ class KilnAPI:
 
         async with self.session.post(url, json=payload) as resp:
             data = await resp.json()
-            self.token = data["authentication_token"]
+
+        self.token = data["authentication_token"]
 
     def headers(self):
+
         return {
             "auth-token": f"binst-cookie={self.token}",
             "email": self.email,
@@ -32,7 +36,17 @@ class KilnAPI:
             "x-app-name-token": "kiln-aid",
         }
 
+    async def fetch_summary_list(self):
+
+        url = "https://kiln.bartinst.com/kilns/data"
+
+        payload = {"externalIds": []}
+
+        async with self.session.post(url, headers=self.headers(), json=payload) as resp:
+            return await resp.json()
+
     async def fetch_status(self, external_id):
+
         url = "https://kiln.bartinst.com/kilnaid-data/status"
 
         payload = {"externalIds": external_id}
@@ -42,17 +56,8 @@ class KilnAPI:
 
         return data[0]
 
-    async def fetch_summary(self, external_id):
-        url = "https://kiln.bartinst.com/kilns/data"
-
-        payload = {"externalIds": [external_id]}
-
-        async with self.session.post(url, headers=self.headers(), json=payload) as resp:
-            data = await resp.json()
-
-        return data[0]
-
     async def fetch_view(self, serial_number):
+
         url = "https://kiln.bartinst.com/kilns/view"
 
         payload = {"ids": [serial_number]}
