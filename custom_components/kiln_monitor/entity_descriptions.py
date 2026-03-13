@@ -235,7 +235,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        scale_divisor=100,
+        scale_divisor=10,
     ),
     KilnSensorDescription(
         key="voltage_2",
@@ -246,7 +246,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        scale_divisor=100,
+        scale_divisor=10,
     ),
     KilnSensorDescription(
         key="voltage_3",
@@ -257,7 +257,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        scale_divisor=100,
+        scale_divisor=10,
     ),
     KilnSensorDescription(
         key="supply_voltage",
@@ -268,7 +268,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        scale_divisor=100,
+        scale_divisor=10,
     ),
     KilnSensorDescription(
         key="no_load_voltage",
