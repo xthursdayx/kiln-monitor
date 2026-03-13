@@ -49,10 +49,6 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
         self.entity_description = description
         self._attr_unique_id = f"{coordinator.serial_number}_{description.key}"
         self._attr_name = description.name
-        self._attr_device_class = description.device_class
-        self._attr_state_class = description.state_class
-        self._attr_entity_category = description.entity_category
-        self._attr_entity_registry_enabled_default = description.entity_registry_enabled_default
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -65,7 +61,10 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
             serial_number=self.coordinator.serial_number,
             sw_version=(
                 self._get_nested(self.coordinator.data, ("view", "status", "fw"))
-                or self._get_nested(self.coordinator.data, ("summary", "settings", "firmwareVersion"))
+                or self._get_nested(
+                    self.coordinator.data,
+                    ("summary", "settings", "firmwareVersion"),
+                )
             ),
         )
 
@@ -77,7 +76,11 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
                 self.coordinator.data,
                 ("metadata", "temperature_scale"),
             )
-            return UnitOfTemperature.CELSIUS if scale == "C" else UnitOfTemperature.FAHRENHEIT
+            return (
+                UnitOfTemperature.CELSIUS
+                if scale == "C"
+                else UnitOfTemperature.FAHRENHEIT
+            )
 
         return self.entity_description.native_unit_of_measurement
 
