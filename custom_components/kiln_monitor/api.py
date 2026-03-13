@@ -82,6 +82,7 @@ class KilnAPI:
 
         self._token = token
         self._login_data = data
+        _LOGGER.debug("Kiln API authentication succeeded for %s", self._email)
 
     async def _ensure_authenticated(self) -> None:
         """Authenticate if not already authenticated."""
@@ -131,6 +132,7 @@ class KilnAPI:
                     if resp.status == 401:
                         self._token = None
                         if attempt == 0:
+                            _LOGGER.debug("401 from %s, re-authenticating once", url)
                             await self.authenticate()
                             continue
                         raise KilnAuthError("Authentication failed")

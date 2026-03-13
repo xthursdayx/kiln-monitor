@@ -58,7 +58,10 @@ class KilnBinarySensor(CoordinatorEntity[KilnDataCoordinator], BinarySensorEntit
             identifiers={(DOMAIN, self.coordinator.serial_number)},
             name=self.coordinator.kiln_name,
             manufacturer="Bartlett Instruments",
-            model="KilnAid Kiln",
+            model=(
+                self.coordinator.data.get("metadata", {}).get("product")
+                or "KilnAid Kiln"
+            ),
             serial_number=self.coordinator.serial_number,
         )
 

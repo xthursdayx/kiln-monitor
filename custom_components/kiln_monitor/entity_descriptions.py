@@ -161,7 +161,8 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         path=("status", "errorText"),
         fallback_paths=(("view", "status", "error", "err_text"),),
         value_type=str,
-        entity_category=EntityCategory.DIAGNOSTIC,
+        # Visible by default; it's useful operationally
+        entity_category=None,
     ),
     KilnSensorDescription(
         key="error_number",
@@ -289,7 +290,7 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         name="Firing Cost",
         path=("view", "status", "firing", "cost"),
         value_type=float,
-        native_unit_of_measurement="$",
+        native_unit_of_measurement=None,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
     ),
@@ -336,24 +337,9 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
 )
 
 BINARY_SENSOR_DESCRIPTIONS: tuple[KilnBinarySensorDescription, ...] = (
-    KilnBinarySensorDescription(
-        key="firing_active",
-        name="Firing Active",
-    ),
-    KilnBinarySensorDescription(
-        key="cooling_active",
-        name="Cooling Active",
-    ),
-    KilnBinarySensorDescription(
-        key="firing_complete",
-        name="Firing Complete",
-    ),
-    KilnBinarySensorDescription(
-        key="alarm_active",
-        name="Alarm Active",
-    ),
-    KilnBinarySensorDescription(
-        key="kiln_fault",
-        name="Kiln Fault",
-    ),
+    KilnBinarySensorDescription(key="firing_active", name="Firing Active"),
+    KilnBinarySensorDescription(key="cooling_active", name="Cooling Active"),
+    KilnBinarySensorDescription(key="firing_complete", name="Firing Complete"),
+    KilnBinarySensorDescription(key="alarm_active", name="Alarm Active"),
+    KilnBinarySensorDescription(key="kiln_fault", name="Kiln Fault"),
 )

@@ -57,7 +57,10 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
             identifiers={(DOMAIN, self.coordinator.serial_number)},
             name=self.coordinator.kiln_name,
             manufacturer="Bartlett Instruments",
-            model="KilnAid Kiln",
+            model=(
+                self._get_nested(self.coordinator.data, ("metadata", "product"))
+                or "KilnAid Kiln"
+            ),
             serial_number=self.coordinator.serial_number,
             sw_version=(
                 self._get_nested(self.coordinator.data, ("view", "status", "fw"))
@@ -142,17 +145,15 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
 
     def _normalize_text_value(self, value: str) -> str:
         """Normalize string-like sensor values."""
-        if self.entity_description.key == "estimated_time_remaining":
-            if value in {"0", "0:00", "0h 0m", "00:00"}:
-                return "0h 0m"
+        zero_like_map = {
+            "estimated_time_remaining": "0h 0m",
+            "hold_remaining_time": "0:00",
+            "firing_time": "0:00",
+        }
 
-        if self.entity_description.key == "hold_remaining_time":
+        if self.entity_description.key in zero_like_map:
             if value in {"0", "0:00", "0h 0m", "00:00"}:
-                return "0:00"
-
-        if self.entity_description.key == "firing_time":
-            if value in {"0", "0:00", "0h 0m", "00:00"}:
-                return "0:00"
+                return zero_like_map[self.entity_description.key]
 
         return value
 
