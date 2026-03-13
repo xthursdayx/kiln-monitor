@@ -85,6 +85,13 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
                 else UnitOfTemperature.FAHRENHEIT
             )
 
+        if self.entity_description.dynamic_temperature_rate_unit:
+            scale = self._get_nested(
+                self.coordinator.data,
+                ("metadata", "temperature_scale"),
+            )
+            return "°C/h" if scale == "C" else "°F/h"
+
         return self.entity_description.native_unit_of_measurement
 
     @property

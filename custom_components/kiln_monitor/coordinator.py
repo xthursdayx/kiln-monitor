@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -51,6 +51,81 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Update polling interval."""
         self.update_interval = timedelta(minutes=minutes)
 
+    def _extract_primary_temperature(
+        self,
+        status: dict[str, Any],
+        summary: dict[str, Any],
+    ) -> float | None:
+        """Extract the primary temperature sample used for rate calculations."""
+        raw = status.get("t1")
+        if raw is None:
+            raw = summary.get("list", {}).get("temperature")
+
+        if raw is None:
+            return None
+
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def _parse_updated_at(self, status: dict[str, Any]) -> datetime | None:
+        """Parse the status updatedAt timestamp."""
+        raw = status.get("updatedAt")
+        if not raw:
+            return None
+
+        try:
+            return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    def _calculate_cooling_rate(
+        self,
+        previous_data: dict[str, Any] | None,
+        current_status: dict[str, Any],
+        current_summary: dict[str, Any],
+    ) -> float:
+        """Calculate cooling rate in degrees per hour.
+
+        Returns a positive number when cooling, otherwise 0.
+        """
+        if not previous_data:
+            return 0.0
+
+        previous_status = previous_data.get("status", {})
+        previous_summary = previous_data.get("summary", {})
+
+        current_temp = self._extract_primary_temperature(current_status, current_summary)
+        previous_temp = self._extract_primary_temperature(previous_status, previous_summary)
+
+        current_time = self._parse_updated_at(current_status)
+        previous_time = self._parse_updated_at(previous_status)
+
+        if (
+            current_temp is None
+            or previous_temp is None
+            or current_time is None
+            or previous_time is None
+        ):
+            return float(previous_data.get("metadata", {}).get("cooling_rate_per_hour", 0.0))
+
+        delta_seconds = (current_time - previous_time).total_seconds()
+        if delta_seconds <= 0:
+            return float(previous_data.get("metadata", {}).get("cooling_rate_per_hour", 0.0))
+
+        delta_hours = delta_seconds / 3600.0
+        # Avoid absurd spikes from extremely small intervals.
+        if delta_hours < (1 / 120):  # less than 30 seconds
+            return float(previous_data.get("metadata", {}).get("cooling_rate_per_hour", 0.0))
+
+        rate = (current_temp - previous_temp) / delta_hours
+
+        if rate < 0:
+            return round(abs(rate), 2)
+
+        return 0.0
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch merged data.
 
@@ -62,8 +137,6 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         previous_data = self.data if isinstance(self.data, dict) else None
 
-        # Status is primary live data, but if we already have previous data,
-        # keep serving it instead of going unavailable on a transient failure.
         try:
             status = await self.api.fetch_status(self.kiln_id)
         except Exception as exc:
@@ -79,7 +152,6 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         mode = str(status.get("mode", "")).lower()
         active = "firing" in mode or "cooling" in mode
 
-        # Summary: refresh occasionally, otherwise reuse cache.
         need_summary = (
             not self._summary_cache
             or self._summary_idle_counter >= IDLE_SUMMARY_REFRESH_EVERY
@@ -99,7 +171,6 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             self._summary_idle_counter += 1
 
-        # View: refresh while active, on first load, or occasionally while idle.
         need_view = (
             not self._view_cache
             or active
@@ -148,6 +219,7 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         product = view.get("product") or "KilnAid Kiln"
+        cooling_rate_per_hour = self._calculate_cooling_rate(previous_data, status, summary)
 
         return {
             "summary": summary,
@@ -159,5 +231,6 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "name": self.kiln_name,
                 "temperature_scale": temperature_scale,
                 "product": product,
+                "cooling_rate_per_hour": cooling_rate_per_hour,
             },
         }

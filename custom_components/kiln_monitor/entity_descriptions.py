@@ -24,6 +24,7 @@ class KilnSensorDescription(SensorEntityDescription):
     fallback_paths: tuple[tuple[str, ...], ...] = ()
     value_type: type = str
     dynamic_temperature_unit: bool = False
+    dynamic_temperature_rate_unit: bool = False
     scale_divisor: float | None = None
 
 
@@ -42,6 +43,14 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         dynamic_temperature_unit=True,
+    ),
+    KilnSensorDescription(
+        key="cooling_rate",
+        name="Cooling Rate",
+        path=("metadata", "cooling_rate_per_hour"),
+        value_type=float,
+        state_class=SensorStateClass.MEASUREMENT,
+        dynamic_temperature_rate_unit=True,
     ),
     KilnSensorDescription(
         key="thermocouple_1",
@@ -161,7 +170,6 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         path=("status", "errorText"),
         fallback_paths=(("view", "status", "error", "err_text"),),
         value_type=str,
-        # Visible by default; it's useful operationally
         entity_category=None,
     ),
     KilnSensorDescription(
