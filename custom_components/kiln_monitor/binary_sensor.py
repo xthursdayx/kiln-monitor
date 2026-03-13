@@ -72,40 +72,54 @@ class KilnBinarySensor(CoordinatorEntity[KilnDataCoordinator], BinarySensorEntit
             status.get("mode")
             or status.get("kilnStatus")
             or ""
-        ).lower()
+        ).strip().lower()
 
         alarm = str(
             status.get("alarmAbbreviation")
             or view.get("status", {}).get("alarm")
             or ""
-        ).upper()
+        ).strip().upper()
 
         error_text = str(
             status.get("errorText")
             or view.get("status", {}).get("error", {}).get("err_text")
             or ""
-        )
+        ).strip()
 
-        error_num = view.get("status", {}).get("error", {}).get("err_num")
-        last_err = view.get("status", {}).get("diag", {}).get("last_err")
+        error_num_raw = view.get("status", {}).get("error", {}).get("err_num")
+        last_err_raw = view.get("status", {}).get("diag", {}).get("last_err")
+
+        def _to_int(value):
+            try:
+                if value in (None, "", "None"):
+                    return None
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        error_num = _to_int(error_num_raw)
+        last_err = _to_int(last_err_raw)
 
         if self.entity_description.key == "firing_active":
             return "firing" in mode
+
         if self.entity_description.key == "cooling_active":
             return "cooling" in mode
+
         if self.entity_description.key == "firing_complete":
             return "complete" in mode
+
         if self.entity_description.key == "alarm_active":
             return alarm not in {"", "OFF"}
+
         if self.entity_description.key == "kiln_fault":
-            # Prefer explicit current error text/number
-            if error_text and error_text != "No Errors":
+            # Only treat active error text / number as fault.
+            if error_text not in {"", "No Errors"}:
                 return True
             if error_num not in (None, 255):
                 return True
 
-            # Do not treat last_err alone as an active fault;
-            # it appears to be historical / sentinel-based.
+            # Do not use last_err as an active fault indicator.
             return False
 
         return False
