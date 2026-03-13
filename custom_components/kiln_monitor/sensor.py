@@ -1,409 +1,207 @@
-"""Coordinator for Kiln Monitor."""
+"""Sensor platform for Kiln Monitor."""
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime, timedelta
 from typing import Any
 
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .api import KilnAPI
-from .const import (
-    DEFAULT_UPDATE_INTERVAL,
-    IDLE_SUMMARY_REFRESH_EVERY,
-    IDLE_VIEW_REFRESH_EVERY,
-)
-
-_LOGGER = logging.getLogger(__name__)
+from .const import DOMAIN
+from .coordinator import KilnDataCoordinator
+from .entity_descriptions import KilnSensorDescription, SENSOR_DESCRIPTIONS
 
 
-class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator for one kiln."""
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up kiln sensors."""
+    coordinators: list[KilnDataCoordinator] = hass.data[DOMAIN][entry.entry_id]
+    entities: list[KilnSensor] = []
+
+    for coordinator in coordinators:
+        for description in SENSOR_DESCRIPTIONS:
+            entities.append(KilnSensor(coordinator, description))
+
+    async_add_entities(entities)
+
+
+class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
+    """Representation of a kiln sensor."""
+
+    entity_description: KilnSensorDescription
+    _attr_has_entity_name = True
 
     def __init__(
         self,
-        hass: HomeAssistant,
-        api: KilnAPI,
-        kiln_info: dict[str, Any],
-        update_interval_minutes: int = DEFAULT_UPDATE_INTERVAL,
+        coordinator: KilnDataCoordinator,
+        description: KilnSensorDescription,
     ) -> None:
-        """Initialize coordinator."""
-        self.api = api
-        self.kiln_id: str = kiln_info["external_id"]
-        self.serial_number: str = kiln_info["serial_number"]
-        self.kiln_name: str = kiln_info.get("name", "Kiln")
-        self._summary_cache: dict[str, Any] = kiln_info.get("initial_summary", {})
-        self._view_cache: dict[str, Any] = {}
-        self._summary_idle_counter = 0
-        self._view_idle_counter = 0
-        self._consecutive_view_failures = 0
+        """Initialize sensor."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._attr_unique_id = f"{coordinator.serial_number}_{description.key}"
+        self._attr_name = description.name
 
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=f"kiln_monitor_{self.kiln_name}",
-            update_interval=timedelta(minutes=update_interval_minutes),
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.serial_number)},
+            name=self.coordinator.kiln_name,
+            manufacturer="Bartlett Instruments",
+            model=(
+                self._get_nested(self.coordinator.data, ("metadata", "product"))
+                or "KilnAid Kiln"
+            ),
+            serial_number=self.coordinator.serial_number,
+            sw_version=(
+                self._get_nested(self.coordinator.data, ("view", "status", "fw"))
+                or self._get_nested(
+                    self.coordinator.data,
+                    ("summary", "settings", "firmwareVersion"),
+                )
+            ),
         )
 
-    def update_interval_minutes(self, minutes: int) -> None:
-        """Update polling interval."""
-        self.update_interval = timedelta(minutes=minutes)
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return native unit."""
+        if self.entity_description.dynamic_temperature_unit:
+            scale = self._get_nested(
+                self.coordinator.data,
+                ("metadata", "temperature_scale"),
+            )
+            return (
+                UnitOfTemperature.CELSIUS
+                if scale == "C"
+                else UnitOfTemperature.FAHRENHEIT
+            )
 
-    def _extract_primary_temperature(
-        self,
-        status: dict[str, Any],
-        summary: dict[str, Any],
-    ) -> float | None:
-        """Extract the primary temperature sample used for rate calculations."""
-        raw = status.get("t1")
-        if raw is None:
-            raw = summary.get("list", {}).get("temperature")
+        if self.entity_description.dynamic_temperature_rate_unit:
+            scale = self._get_nested(
+                self.coordinator.data,
+                ("metadata", "temperature_scale"),
+            )
+            return "°C/h" if scale == "C" else "°F/h"
 
-        if raw is None:
+        return self.entity_description.native_unit_of_measurement
+
+    @property
+    def native_value(self) -> Any:
+        """Return current value."""
+        value = self._resolve_value()
+        if value is None:
             return None
 
-        try:
-            return float(raw)
-        except (TypeError, ValueError):
-            return None
+        if self.entity_description.scale_divisor:
+            value = float(value) / self.entity_description.scale_divisor
 
-    def _parse_updated_at(self, status: dict[str, Any]) -> datetime | None:
-        """Parse the status updatedAt timestamp."""
-        raw = status.get("updatedAt")
-        if not raw:
-            return None
+        if self.entity_description.value_type is float:
+            return float(value)
 
-        try:
-            return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        except ValueError:
-            return None
+        if self.entity_description.value_type is int:
+            return int(value)
 
-    def _calculate_cooling_rate(
-        self,
-        previous_data: dict[str, Any] | None,
-        current_status: dict[str, Any],
-        current_summary: dict[str, Any],
-    ) -> float:
-        """Calculate cooling rate in degrees per hour.
+        text_value = str(value).strip()
+        return self._normalize_text_value(text_value)
 
-        Returns a positive number when cooling, otherwise 0.
-        """
-        if not previous_data:
-            return 0.0
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
+        if self.entity_description.key == "program_name":
+            return {
+                "unformatted_program_segments": self._get_nested(
+                    self.coordinator.data,
+                    ("status", "unformattedProgramSegments"),
+                ),
+                "program_segments": self._get_nested(
+                    self.coordinator.data,
+                    ("status", "programSegments"),
+                ),
+                "program_steps": self._get_nested(
+                    self.coordinator.data,
+                    ("view", "program", "steps"),
+                ),
+            }
 
-        previous_status = previous_data.get("status", {})
-        previous_summary = previous_data.get("summary", {})
+        if self.entity_description.key == "kiln_status":
+            return {
+                "external_id": self._get_nested(
+                    self.coordinator.data,
+                    ("metadata", "external_id"),
+                ),
+                "serial_number": self._get_nested(
+                    self.coordinator.data,
+                    ("metadata", "serial_number"),
+                ),
+                "temperature_scale": self._get_nested(
+                    self.coordinator.data,
+                    ("metadata", "temperature_scale"),
+                ),
+            }
 
-        current_temp = self._extract_primary_temperature(current_status, current_summary)
-        previous_temp = self._extract_primary_temperature(previous_status, previous_summary)
+        if self.entity_description.key == "target_firing_curve":
+            target_curve = self._get_nested(
+                self.coordinator.data,
+                ("metadata", "target_curve"),
+            )
+            if not isinstance(target_curve, dict):
+                return None
 
-        current_time = self._parse_updated_at(current_status)
-        previous_time = self._parse_updated_at(previous_status)
-
-        if (
-            current_temp is None
-            or previous_temp is None
-            or current_time is None
-            or previous_time is None
-        ):
-            return float(previous_data.get("metadata", {}).get("cooling_rate_per_hour", 0.0))
-
-        delta_seconds = (current_time - previous_time).total_seconds()
-        if delta_seconds <= 0:
-            return float(previous_data.get("metadata", {}).get("cooling_rate_per_hour", 0.0))
-
-        delta_hours = delta_seconds / 3600.0
-        if delta_hours < (1 / 120):
-            return float(previous_data.get("metadata", {}).get("cooling_rate_per_hour", 0.0))
-
-        rate = (current_temp - previous_temp) / delta_hours
-
-        if rate < 0:
-            return round(abs(rate), 2)
-
-        return 0.0
-
-    def _extract_program_steps(
-        self,
-        status: dict[str, Any],
-        view: dict[str, Any],
-    ) -> tuple[list[dict[str, Any]], str]:
-        """Extract the target firing program steps and source."""
-        status_steps = status.get("unformattedProgramSegments")
-        if isinstance(status_steps, list) and status_steps:
-            return status_steps, "status.unformattedProgramSegments"
-
-        view_steps = view.get("program", {}).get("steps")
-        if isinstance(view_steps, list) and view_steps:
-            return view_steps, "view.program.steps"
-
-        return [], "none"
-
-    def _extract_start_temperature(
-        self,
-        status: dict[str, Any],
-        summary: dict[str, Any],
-        view: dict[str, Any],
-    ) -> float | None:
-        """Find the best available starting temperature for target-curve math."""
-        start_temp = view.get("latest_firing", {}).get("starting_temp", {}).get("z1")
-        if start_temp is not None:
-            try:
-                return float(start_temp)
-            except (TypeError, ValueError):
-                pass
-
-        current_temp = self._extract_primary_temperature(status, summary)
-        if current_temp is not None:
-            return current_temp
+            return {
+                "program_name": target_curve.get("program_name"),
+                "temperature_scale": target_curve.get("temperature_scale"),
+                "source": target_curve.get("source"),
+                "start_temperature": target_curve.get("start_temperature"),
+                "segment_count": target_curve.get("segment_count"),
+                "segments": target_curve.get("segments"),
+                "target_points": target_curve.get("target_points"),
+            }
 
         return None
 
-    def _build_target_curve(
-        self,
-        status: dict[str, Any],
-        summary: dict[str, Any],
-        view: dict[str, Any],
-        temperature_scale: str,
-    ) -> dict[str, Any]:
-        """Build a compact chart-friendly target curve."""
-        steps, source = self._extract_program_steps(status, view)
-        if not steps:
-            return {
-                "summary": "No target curve",
-                "source": source,
-                "program_name": status.get("programName") or view.get("program", {}).get("name"),
-                "temperature_scale": temperature_scale,
-                "start_temperature": None,
-                "segment_count": 0,
-                "segments": [],
-                "target_points": [],
-            }
-
-        start_temp = self._extract_start_temperature(status, summary, view)
-
-        program_name = status.get("programName") or view.get("program", {}).get("name")
-        segments: list[dict[str, Any]] = []
-        target_points: list[dict[str, Any]] = []
-
-        current_minute = 0.0
-        previous_target = start_temp
-
-        if start_temp is not None:
-            target_points.append(
-                {
-                    "minute": 0.0,
-                    "temp": round(float(start_temp), 2),
-                    "label": "Start",
-                }
-            )
-
-        for raw_step in steps:
-            try:
-                segment_num = int(raw_step.get("num"))
-            except (TypeError, ValueError):
-                segment_num = len(segments) + 1
-
-            target_temp_raw = raw_step.get("t")
-            ramp_rate_raw = raw_step.get("rt")
-            hold_hours_raw = raw_step.get("hr", 0)
-            hold_minutes_raw = raw_step.get("mn", 0)
-
-            try:
-                target_temp = float(target_temp_raw)
-            except (TypeError, ValueError):
-                continue
-
-            try:
-                ramp_rate = float(ramp_rate_raw)
-            except (TypeError, ValueError):
-                ramp_rate = 0.0
-
-            try:
-                hold_minutes = (int(hold_hours_raw) * 60) + int(hold_minutes_raw)
-            except (TypeError, ValueError):
-                hold_minutes = 0
-
-            if previous_target is None:
-                previous_target = target_temp
-
-            if ramp_rate <= 0:
-                ramp_minutes = 0.0
-                segment_kind = "hold"
-            elif ramp_rate >= 9999:
-                ramp_minutes = 0.0
-                segment_kind = "fast"
-            else:
-                ramp_minutes = abs(target_temp - previous_target) / ramp_rate * 60.0
-                if hold_minutes > 0:
-                    segment_kind = "ramp_hold"
-                elif target_temp > previous_target:
-                    segment_kind = "ramp_up"
-                elif target_temp < previous_target:
-                    segment_kind = "ramp_down"
-                else:
-                    segment_kind = "hold"
-
-            start_minute = round(current_minute, 2)
-            ramp_end_minute = round(current_minute + ramp_minutes, 2)
-            end_minute = round(ramp_end_minute + hold_minutes, 2)
-
-            segments.append(
-                {
-                    "segment": segment_num,
-                    "target_temp": round(target_temp, 2),
-                    "ramp_rate": round(ramp_rate, 2),
-                    "hold_minutes": hold_minutes,
-                    "start_minute": start_minute,
-                    "ramp_end_minute": ramp_end_minute,
-                    "end_minute": end_minute,
-                    "kind": segment_kind,
-                }
-            )
-
-            target_points.append(
-                {
-                    "minute": ramp_end_minute,
-                    "temp": round(target_temp, 2),
-                    "label": f"Segment {segment_num} target",
-                }
-            )
-
-            if hold_minutes > 0:
-                target_points.append(
-                    {
-                        "minute": end_minute,
-                        "temp": round(target_temp, 2),
-                        "label": f"Segment {segment_num} hold end",
-                    }
-                )
-
-            current_minute = end_minute
-            previous_target = target_temp
-
-        summary_text = f"{len(segments)} segments"
-
-        return {
-            "summary": summary_text,
-            "source": source,
-            "program_name": program_name,
-            "temperature_scale": temperature_scale,
-            "start_temperature": round(start_temp, 2) if start_temp is not None else None,
-            "segment_count": len(segments),
-            "segments": segments,
-            "target_points": target_points,
+    def _normalize_text_value(self, value: str) -> str:
+        """Normalize string-like sensor values."""
+        zero_like_map = {
+            "estimated_time_remaining": "0h 0m",
+            "hold_remaining_time": "0:00",
+            "firing_time": "0:00",
         }
 
-    async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch merged data.
+        if self.entity_description.key in zero_like_map:
+            if value in {"0", "0:00", "0h 0m", "00:00"}:
+                return zero_like_map[self.entity_description.key]
 
-        Important behavior:
-        - status is primary
-        - summary/view are best-effort and cached
-        - if status temporarily fails after initial success, keep last good data
-          so entities do not flap unavailable every poll
-        """
-        previous_data = self.data if isinstance(self.data, dict) else None
+        return value
 
-        try:
-            status = await self.api.fetch_status(self.kiln_id)
-        except Exception as exc:
-            if previous_data:
-                _LOGGER.warning(
-                    "Status update failed for %s; keeping previous data: %s",
-                    self.kiln_name,
-                    exc,
-                )
-                return previous_data
-            raise UpdateFailed(f"Failed to update {self.kiln_name}: {exc}") from exc
+    def _resolve_value(self) -> Any:
+        """Resolve primary or fallback path."""
+        value = self._get_nested(self.coordinator.data, self.entity_description.path)
+        if value is not None:
+            return value
 
-        mode = str(status.get("mode", "")).lower()
-        active = "firing" in mode or "cooling" in mode
+        for path in self.entity_description.fallback_paths:
+            value = self._get_nested(self.coordinator.data, path)
+            if value is not None:
+                return value
 
-        need_summary = (
-            not self._summary_cache
-            or self._summary_idle_counter >= IDLE_SUMMARY_REFRESH_EVERY
-        )
-        if need_summary:
-            try:
-                self._summary_cache = await self.api.fetch_summary(self.kiln_id)
-                self._summary_idle_counter = 0
-                _LOGGER.debug("Refreshed summary for %s", self.kiln_name)
-            except Exception as exc:
-                _LOGGER.debug(
-                    "Summary refresh failed for %s, using cache: %s",
-                    self.kiln_name,
-                    exc,
-                )
-                self._summary_idle_counter += 1
-        else:
-            self._summary_idle_counter += 1
+        return None
 
-        need_view = (
-            not self._view_cache
-            or active
-            or self._view_idle_counter >= IDLE_VIEW_REFRESH_EVERY
-        )
-        if need_view:
-            try:
-                self._view_cache = await self.api.fetch_view(self.serial_number)
-                self._view_idle_counter = 0
-                self._consecutive_view_failures = 0
-                _LOGGER.debug("Refreshed view for %s", self.kiln_name)
-            except Exception as exc:
-                self._consecutive_view_failures += 1
-                self._view_idle_counter += 1
-                _LOGGER.debug(
-                    "View refresh failed for %s, using cache: %s",
-                    self.kiln_name,
-                    exc,
-                )
-                if active and self._consecutive_view_failures >= 3:
-                    _LOGGER.warning(
-                        "View data has failed %d consecutive times for %s while active",
-                        self._consecutive_view_failures,
-                        self.kiln_name,
-                    )
-        else:
-            self._view_idle_counter += 1
-
-        summary = self._summary_cache
-        view = self._view_cache
-
-        self.kiln_name = (
-            status.get("name")
-            or summary.get("list", {}).get("name")
-            or summary.get("settings", {}).get("name")
-            or view.get("name")
-            or self.kiln_name
-        )
-
-        temperature_scale = (
-            status.get("temperatureScale")
-            or summary.get("list", {}).get("temperatureScale")
-            or summary.get("settings", {}).get("temperatureScale")
-            or view.get("config", {}).get("t_scale")
-            or "F"
-        )
-
-        product = view.get("product") or "KilnAid Kiln"
-        cooling_rate_per_hour = self._calculate_cooling_rate(previous_data, status, summary)
-        target_curve = self._build_target_curve(status, summary, view, temperature_scale)
-
-        return {
-            "summary": summary,
-            "status": status,
-            "view": view,
-            "metadata": {
-                "external_id": self.kiln_id,
-                "serial_number": self.serial_number,
-                "name": self.kiln_name,
-                "temperature_scale": temperature_scale,
-                "product": product,
-                "cooling_rate_per_hour": cooling_rate_per_hour,
-                "target_curve_summary": target_curve["summary"],
-                "target_curve": target_curve,
-            },
-        }
+    def _get_nested(self, data: Any, path: tuple[str, ...]) -> Any:
+        """Safely resolve nested path."""
+        current = data
+        for key in path:
+            if not isinstance(current, dict):
+                return None
+            current = current.get(key)
+            if current is None:
+                return None
+        return current
