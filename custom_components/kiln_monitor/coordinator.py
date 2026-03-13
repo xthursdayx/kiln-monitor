@@ -115,8 +115,7 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return float(previous_data.get("metadata", {}).get("cooling_rate_per_hour", 0.0))
 
         delta_hours = delta_seconds / 3600.0
-        # Avoid absurd spikes from extremely small intervals.
-        if delta_hours < (1 / 120):  # less than 30 seconds
+        if delta_hours < (1 / 120):
             return float(previous_data.get("metadata", {}).get("cooling_rate_per_hour", 0.0))
 
         rate = (current_temp - previous_temp) / delta_hours
@@ -125,6 +124,177 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return round(abs(rate), 2)
 
         return 0.0
+
+    def _extract_program_steps(
+        self,
+        status: dict[str, Any],
+        view: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], str]:
+        """Extract the target firing program steps and source."""
+        status_steps = status.get("unformattedProgramSegments")
+        if isinstance(status_steps, list) and status_steps:
+            return status_steps, "status.unformattedProgramSegments"
+
+        view_steps = view.get("program", {}).get("steps")
+        if isinstance(view_steps, list) and view_steps:
+            return view_steps, "view.program.steps"
+
+        return [], "none"
+
+    def _extract_start_temperature(
+        self,
+        status: dict[str, Any],
+        summary: dict[str, Any],
+        view: dict[str, Any],
+    ) -> float | None:
+        """Find the best available starting temperature for target-curve math."""
+        start_temp = view.get("latest_firing", {}).get("starting_temp", {}).get("z1")
+        if start_temp is not None:
+            try:
+                return float(start_temp)
+            except (TypeError, ValueError):
+                pass
+
+        current_temp = self._extract_primary_temperature(status, summary)
+        if current_temp is not None:
+            return current_temp
+
+        return None
+
+    def _build_target_curve(
+        self,
+        status: dict[str, Any],
+        summary: dict[str, Any],
+        view: dict[str, Any],
+        temperature_scale: str,
+    ) -> dict[str, Any]:
+        """Build a compact chart-friendly target curve."""
+        steps, source = self._extract_program_steps(status, view)
+        if not steps:
+            return {
+                "summary": "No target curve",
+                "source": source,
+                "program_name": status.get("programName") or view.get("program", {}).get("name"),
+                "temperature_scale": temperature_scale,
+                "start_temperature": None,
+                "segment_count": 0,
+                "segments": [],
+                "target_points": [],
+            }
+
+        start_temp = self._extract_start_temperature(status, summary, view)
+
+        program_name = status.get("programName") or view.get("program", {}).get("name")
+        segments: list[dict[str, Any]] = []
+        target_points: list[dict[str, Any]] = []
+
+        current_minute = 0.0
+        previous_target = start_temp
+
+        if start_temp is not None:
+            target_points.append(
+                {
+                    "minute": 0.0,
+                    "temp": round(float(start_temp), 2),
+                    "label": "Start",
+                }
+            )
+
+        for raw_step in steps:
+            try:
+                segment_num = int(raw_step.get("num"))
+            except (TypeError, ValueError):
+                segment_num = len(segments) + 1
+
+            target_temp_raw = raw_step.get("t")
+            ramp_rate_raw = raw_step.get("rt")
+            hold_hours_raw = raw_step.get("hr", 0)
+            hold_minutes_raw = raw_step.get("mn", 0)
+
+            try:
+                target_temp = float(target_temp_raw)
+            except (TypeError, ValueError):
+                continue
+
+            try:
+                ramp_rate = float(ramp_rate_raw)
+            except (TypeError, ValueError):
+                ramp_rate = 0.0
+
+            try:
+                hold_minutes = (int(hold_hours_raw) * 60) + int(hold_minutes_raw)
+            except (TypeError, ValueError):
+                hold_minutes = 0
+
+            if previous_target is None:
+                previous_target = target_temp
+
+            if ramp_rate <= 0:
+                ramp_minutes = 0.0
+                segment_kind = "hold"
+            elif ramp_rate >= 9999:
+                ramp_minutes = 0.0
+                segment_kind = "fast"
+            else:
+                ramp_minutes = abs(target_temp - previous_target) / ramp_rate * 60.0
+                if hold_minutes > 0:
+                    segment_kind = "ramp_hold"
+                elif target_temp > previous_target:
+                    segment_kind = "ramp_up"
+                elif target_temp < previous_target:
+                    segment_kind = "ramp_down"
+                else:
+                    segment_kind = "hold"
+
+            start_minute = round(current_minute, 2)
+            ramp_end_minute = round(current_minute + ramp_minutes, 2)
+            end_minute = round(ramp_end_minute + hold_minutes, 2)
+
+            segments.append(
+                {
+                    "segment": segment_num,
+                    "target_temp": round(target_temp, 2),
+                    "ramp_rate": round(ramp_rate, 2),
+                    "hold_minutes": hold_minutes,
+                    "start_minute": start_minute,
+                    "ramp_end_minute": ramp_end_minute,
+                    "end_minute": end_minute,
+                    "kind": segment_kind,
+                }
+            )
+
+            target_points.append(
+                {
+                    "minute": ramp_end_minute,
+                    "temp": round(target_temp, 2),
+                    "label": f"Segment {segment_num} target",
+                }
+            )
+
+            if hold_minutes > 0:
+                target_points.append(
+                    {
+                        "minute": end_minute,
+                        "temp": round(target_temp, 2),
+                        "label": f"Segment {segment_num} hold end",
+                    }
+                )
+
+            current_minute = end_minute
+            previous_target = target_temp
+
+        summary_text = f"{len(segments)} segments"
+
+        return {
+            "summary": summary_text,
+            "source": source,
+            "program_name": program_name,
+            "temperature_scale": temperature_scale,
+            "start_temperature": round(start_temp, 2) if start_temp is not None else None,
+            "segment_count": len(segments),
+            "segments": segments,
+            "target_points": target_points,
+        }
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch merged data.
@@ -220,6 +390,7 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         product = view.get("product") or "KilnAid Kiln"
         cooling_rate_per_hour = self._calculate_cooling_rate(previous_data, status, summary)
+        target_curve = self._build_target_curve(status, summary, view, temperature_scale)
 
         return {
             "summary": summary,
@@ -232,5 +403,7 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "temperature_scale": temperature_scale,
                 "product": product,
                 "cooling_rate_per_hour": cooling_rate_per_hour,
+                "target_curve_summary": target_curve["summary"],
+                "target_curve": target_curve,
             },
         }

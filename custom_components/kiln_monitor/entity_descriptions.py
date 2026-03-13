@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
     BinarySensorEntityDescription,
 )
 from homeassistant.components.sensor import (
@@ -51,6 +50,12 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         value_type=float,
         state_class=SensorStateClass.MEASUREMENT,
         dynamic_temperature_rate_unit=True,
+    ),
+    KilnSensorDescription(
+        key="target_firing_curve",
+        name="Target Firing Curve",
+        path=("metadata", "target_curve_summary"),
+        value_type=str,
     ),
     KilnSensorDescription(
         key="thermocouple_1",

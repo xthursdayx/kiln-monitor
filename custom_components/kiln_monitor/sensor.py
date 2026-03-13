@@ -148,6 +148,24 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
                 ),
             }
 
+        if self.entity_description.key == "target_firing_curve":
+            target_curve = self._get_nested(
+                self.coordinator.data,
+                ("metadata", "target_curve"),
+            )
+            if not isinstance(target_curve, dict):
+                return None
+
+            return {
+                "program_name": target_curve.get("program_name"),
+                "temperature_scale": target_curve.get("temperature_scale"),
+                "source": target_curve.get("source"),
+                "start_temperature": target_curve.get("start_temperature"),
+                "segment_count": target_curve.get("segment_count"),
+                "segments": target_curve.get("segments"),
+                "target_points": target_curve.get("target_points"),
+            }
+
         return None
 
     def _normalize_text_value(self, value: str) -> str:
