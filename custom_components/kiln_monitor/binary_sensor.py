@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -16,8 +18,8 @@ from .entity_descriptions import (
     KilnBinarySensorDescription,
 )
 
-import logging
 _LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -115,15 +117,6 @@ class KilnBinarySensor(CoordinatorEntity[KilnDataCoordinator], BinarySensorEntit
             return alarm not in {"", "OFF"}
 
         if self.entity_description.key == "kiln_fault":
-            # Only treat active error text / number as fault.
-            if error_text not in {"", "No Errors"}:
-                return True
-            if error_num not in (None, 255):
-                return True
-
-            # Do not use last_err as an active fault indicator.
-            return False
-
             _LOGGER.warning(
                 "Kiln fault debug: error_text=%r error_num_raw=%r error_num=%r last_err_raw=%r last_err=%r",
                 error_text,
@@ -132,5 +125,15 @@ class KilnBinarySensor(CoordinatorEntity[KilnDataCoordinator], BinarySensorEntit
                 last_err_raw,
                 last_err,
             )
+
+            # Only treat explicit current error text / number as an active fault.
+            if error_text not in {"", "No Errors"}:
+                return True
+
+            if error_num not in (None, 255):
+                return True
+
+            # Do not use last_err as an active fault indicator.
+            return False
 
         return False
