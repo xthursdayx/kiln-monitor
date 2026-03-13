@@ -16,6 +16,8 @@ from .entity_descriptions import (
     KilnBinarySensorDescription,
 )
 
+import logging
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -121,5 +123,14 @@ class KilnBinarySensor(CoordinatorEntity[KilnDataCoordinator], BinarySensorEntit
 
             # Do not use last_err as an active fault indicator.
             return False
+
+            _LOGGER.warning(
+                "Kiln fault debug: error_text=%r error_num_raw=%r error_num=%r last_err_raw=%r last_err=%r",
+                error_text,
+                error_num_raw,
+                error_num,
+                last_err_raw,
+                last_err,
+            )
 
         return False
