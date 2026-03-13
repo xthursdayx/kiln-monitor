@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -17,8 +15,6 @@ from .entity_descriptions import (
     BINARY_SENSOR_DESCRIPTIONS,
     KilnBinarySensorDescription,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -90,20 +86,6 @@ class KilnBinarySensor(CoordinatorEntity[KilnDataCoordinator], BinarySensorEntit
             or ""
         ).strip()
 
-        error_num_raw = view.get("status", {}).get("error", {}).get("err_num")
-        last_err_raw = view.get("status", {}).get("diag", {}).get("last_err")
-
-        def _to_int(value):
-            try:
-                if value in (None, "", "None"):
-                    return None
-                return int(value)
-            except (TypeError, ValueError):
-                return None
-
-        error_num = _to_int(error_num_raw)
-        last_err = _to_int(last_err_raw)
-
         if self.entity_description.key == "firing_active":
             return "firing" in mode
 
@@ -117,23 +99,6 @@ class KilnBinarySensor(CoordinatorEntity[KilnDataCoordinator], BinarySensorEntit
             return alarm not in {"", "OFF"}
 
         if self.entity_description.key == "kiln_fault":
-            _LOGGER.warning(
-                "Kiln fault debug: error_text=%r error_num_raw=%r error_num=%r last_err_raw=%r last_err=%r",
-                error_text,
-                error_num_raw,
-                error_num,
-                last_err_raw,
-                last_err,
-            )
-
-            # Only treat explicit current error text / number as an active fault.
-            if error_text not in {"", "No Errors"}:
-                return True
-
-            if error_num not in (None, 255):
-                return True
-
-            # Do not use last_err as an active fault indicator.
-            return False
+            return error_text not in {"", "No Errors"}
 
         return False

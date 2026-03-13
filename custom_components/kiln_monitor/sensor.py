@@ -96,9 +96,12 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
 
         if self.entity_description.value_type is float:
             return float(value)
+
         if self.entity_description.value_type is int:
             return int(value)
-        return str(value)
+
+        text_value = str(value).strip()
+        return self._normalize_text_value(text_value)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -136,6 +139,22 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
             }
 
         return None
+
+    def _normalize_text_value(self, value: str) -> str:
+        """Normalize string-like sensor values."""
+        if self.entity_description.key == "estimated_time_remaining":
+            if value in {"0", "0:00", "0h 0m", "00:00"}:
+                return "0h 0m"
+
+        if self.entity_description.key == "hold_remaining_time":
+            if value in {"0", "0:00", "0h 0m", "00:00"}:
+                return "0:00"
+
+        if self.entity_description.key == "firing_time":
+            if value in {"0", "0:00", "0h 0m", "00:00"}:
+                return "0:00"
+
+        return value
 
     def _resolve_value(self) -> Any:
         """Resolve primary or fallback path."""
