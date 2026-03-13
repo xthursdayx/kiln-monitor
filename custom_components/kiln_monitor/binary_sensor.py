@@ -98,12 +98,14 @@ class KilnBinarySensor(CoordinatorEntity[KilnDataCoordinator], BinarySensorEntit
         if self.entity_description.key == "alarm_active":
             return alarm not in {"", "OFF"}
         if self.entity_description.key == "kiln_fault":
+            # Prefer explicit current error text/number
             if error_text and error_text != "No Errors":
                 return True
             if error_num not in (None, 255):
                 return True
-            if last_err not in (None, 255):
-                return True
+
+            # Do not treat last_err alone as an active fault;
+            # it appears to be historical / sentinel-based.
             return False
 
         return False
