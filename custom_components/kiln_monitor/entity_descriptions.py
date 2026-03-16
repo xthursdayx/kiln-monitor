@@ -142,32 +142,6 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         fallback_paths=(("view", "status", "firing", "fire_time"),),
         value_type=str,
     ),
-    # max_temperature is a running high-water mark for the current firing,
-    # not an instantaneous measurement.  Using MEASUREMENT here would cause
-    # HA's statistics engine to compute misleading min/mean/max over time.
-    # No state_class is set; long-term stats are tracked via the recorder
-    # include in configuration.yaml instead.
-    KilnSensorDescription(
-        key="max_temperature",
-        name="Max Temperature",
-        path=("view", "status", "firing", "max_temp"),
-        fallback_paths=(("status", "maxTemperature"),),
-        value_type=float,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        dynamic_temperature_unit=True,
-        # Not DIAGNOSTIC — this is a primary firing outcome metric that
-        # is actively used in automations and summary displays.
-    ),
-    # firing_cost is also a primary firing outcome.  Keeping it visible
-    # (not DIAGNOSTIC) so it appears on the device card without expanding.
-    KilnSensorDescription(
-        key="firing_cost",
-        name="Firing Cost",
-        path=("view", "status", "firing", "cost"),
-        fallback_paths=(("status", "cost"),),
-        value_type=float,
-        # No entity_registry_enabled_default=False so it is visible by default.
-    ),
     KilnSensorDescription(
         key="firmware_version",
         name="Firmware Version",
@@ -330,6 +304,40 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         value_type=int,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
+    ),
+    KilnSensorDescription(
+        key="firing_cost",
+        name="Firing Cost",
+        path=("view", "status", "firing", "cost"),
+        fallback_paths=(("status", "cost"),),
+        value_type=float,
+        # FIX: removed EntityCategory.DIAGNOSTIC.  firing_cost is a primary
+        # firing-outcome metric used in automations and the session summary; it
+        # should be visible by default on the device page, not hidden behind the
+        # diagnostic expander.
+        entity_registry_enabled_default=False,
+    ),
+    KilnSensorDescription(
+        key="max_temperature",
+        name="Max Temperature",
+        path=("view", "status", "firing", "max_temp"),
+        fallback_paths=(("status", "maxTemperature"),),
+        value_type=float,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        # MEASUREMENT is used here pragmatically to enable HA long-term
+        # statistics, which is required for historical firing charts and
+        # analysis over many firings.  Semantically, MEASUREMENT implies an
+        # instantaneous reading; max_temperature is actually a running
+        # high-water mark for the current firing that holds its peak value
+        # during cooling.  The resulting statistics will therefore include
+        # ramp-up values, not just the final peak — use
+        # input_number.athena_last_peak_temperature (set by the session-end
+        # automation) for precise per-firing peak tracking.
+        state_class=SensorStateClass.MEASUREMENT,
+        # EntityCategory.DIAGNOSTIC removed: max_temperature is a primary
+        # firing-outcome metric used in notifications and the session summary.
+        entity_registry_enabled_default=False,
+        dynamic_temperature_unit=True,
     ),
     KilnSensorDescription(
         key="program_type",
