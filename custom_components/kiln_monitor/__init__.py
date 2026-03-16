@@ -20,6 +20,14 @@ from .const import (
 )
 from .coordinator import KilnDataCoordinator
 
+# Pre-import platform modules so they are already in sys.modules by the time
+# async_forward_entry_setups runs inside the event loop.  Without this,
+# Python 3.14 / HA 2025.x detects importlib.import_module as a blocking call
+# and logs a "Detected blocking call to import_module" warning.  Importing at
+# module level is safe because HA's loader imports __init__.py off the event
+# loop during integration setup.
+from . import binary_sensor, sensor  # noqa: E402, F401
+
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
@@ -83,4 +91,4 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     )
 
     for coordinator in coordinators:
-        coordinator.set_update_interval(update_interval)
+        coordinator.update_interval_minutes(update_interval)
