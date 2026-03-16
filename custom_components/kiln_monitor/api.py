@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
-from aiohttp import ClientError, ClientSession
+from aiohttp import ClientError, ClientSession, ClientTimeout
 
-from .const import DATA_URL, LOGIN_URL, SETTINGS_URL, STATUS_URL, VIEW_URL
+from .const import DATA_URL, LOGIN_URL, LOGIN_HEADERS, SETTINGS_URL, STATUS_URL, VIEW_URL
 
 _LOGGER = logging.getLogger(__name__)
+
+_TIMEOUT = ClientTimeout(total=30)
 
 
 class KilnApiError(Exception):
@@ -37,21 +38,6 @@ class KilnAPI:
 
     async def authenticate(self) -> None:
         """Authenticate and cache token."""
-        headers = {
-            "Accept": "application/json",
-            "kaid-version": "kaid-plus",
-            "Sec-Fetch-Site": "cross-site",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Sec-Fetch-Mode": "cors",
-            "Content-Type": "application/json",
-            "Origin": "ionic://localhost",
-            "User-Agent": (
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) "
-                "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
-            ),
-            "Connection": "keep-alive",
-            "Sec-Fetch-Dest": "empty",
-        }
         payload = {
             "email": self._email,
             "password": self._password,
@@ -60,9 +46,9 @@ class KilnAPI:
         try:
             async with self._session.post(
                 LOGIN_URL,
-                headers=headers,
+                headers=LOGIN_HEADERS,
                 json=payload,
-                timeout=30,
+                timeout=_TIMEOUT,
             ) as resp:
                 if resp.status == 401:
                     raise KilnAuthError("Invalid email or password")
@@ -71,8 +57,8 @@ class KilnAPI:
                         f"Login failed with status {resp.status}"
                     )
                 data = await resp.json()
-        except asyncio.TimeoutError as exc:
-            raise KilnConnectionError("Login request timed out") from exc
+        except KilnApiError:
+            raise
         except ClientError as exc:
             raise KilnConnectionError(str(exc)) from exc
 
@@ -127,7 +113,7 @@ class KilnAPI:
                     headers=self._headers(),
                     json=payload,
                     params=params,
-                    timeout=30,
+                    timeout=_TIMEOUT,
                 ) as resp:
                     if resp.status == 401:
                         self._token = None
@@ -142,8 +128,8 @@ class KilnAPI:
                         )
                     return await resp.json()
 
-            except asyncio.TimeoutError as exc:
-                raise KilnConnectionError(f"Request to {url} timed out") from exc
+            except KilnApiError:
+                raise
             except ClientError as exc:
                 raise KilnConnectionError(str(exc)) from exc
 
@@ -178,13 +164,20 @@ class KilnAPI:
         }
 
     def _extract_kilns_recursive(self, obj: Any) -> list[dict[str, Any]]:
-        """Recursively search nested responses for kiln-like dicts."""
+        """Recursively search nested responses for kiln-like dicts.
+
+        Returns early after matching a dict so that nested sub-keys within an
+        already-matched kiln object are not also evaluated as potential kilns.
+        """
         found: list[dict[str, Any]] = []
 
         if isinstance(obj, dict):
             normalized = self._normalize_kiln(obj)
             if normalized:
+                # Stop recursing into this dict — its children belong to
+                # this kiln, not to separate kiln objects.
                 found.append(normalized)
+                return found
 
             for value in obj.values():
                 found.extend(self._extract_kilns_recursive(value))
@@ -243,7 +236,8 @@ class KilnAPI:
 
     async def fetch_status(self, external_id: str) -> dict[str, Any]:
         """Fetch primary live status for one kiln."""
-        data = await self._post_json(STATUS_URL, {"externalIds": external_id})
+        # externalIds must be a list, consistent with all other endpoints.
+        data = await self._post_json(STATUS_URL, {"externalIds": [external_id]})
         if not isinstance(data, list) or not data:
             raise KilnConnectionError("Unexpected status response format")
         return data[0]

@@ -142,6 +142,32 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         fallback_paths=(("view", "status", "firing", "fire_time"),),
         value_type=str,
     ),
+    # max_temperature is a running high-water mark for the current firing,
+    # not an instantaneous measurement.  Using MEASUREMENT here would cause
+    # HA's statistics engine to compute misleading min/mean/max over time.
+    # No state_class is set; long-term stats are tracked via the recorder
+    # include in configuration.yaml instead.
+    KilnSensorDescription(
+        key="max_temperature",
+        name="Max Temperature",
+        path=("view", "status", "firing", "max_temp"),
+        fallback_paths=(("status", "maxTemperature"),),
+        value_type=float,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        dynamic_temperature_unit=True,
+        # Not DIAGNOSTIC — this is a primary firing outcome metric that
+        # is actively used in automations and summary displays.
+    ),
+    # firing_cost is also a primary firing outcome.  Keeping it visible
+    # (not DIAGNOSTIC) so it appears on the device card without expanding.
+    KilnSensorDescription(
+        key="firing_cost",
+        name="Firing Cost",
+        path=("view", "status", "firing", "cost"),
+        fallback_paths=(("status", "cost"),),
+        value_type=float,
+        # No entity_registry_enabled_default=False so it is visible by default.
+    ),
     KilnSensorDescription(
         key="firmware_version",
         name="Firmware Version",
@@ -304,27 +330,6 @@ SENSOR_DESCRIPTIONS: tuple[KilnSensorDescription, ...] = (
         value_type=int,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-    ),
-    KilnSensorDescription(
-        key="firing_cost",
-        name="Firing Cost",
-        path=("view", "status", "firing", "cost"),
-        fallback_paths=(("status", "cost"),),
-        value_type=float,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-    ),
-    KilnSensorDescription(
-        key="max_temperature",
-        name="Max Temperature",
-        path=("view", "status", "firing", "max_temp"),
-        fallback_paths=(("status", "maxTemperature"),),
-        value_type=float,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-        dynamic_temperature_unit=True,
     ),
     KilnSensorDescription(
         key="program_type",

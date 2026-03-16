@@ -47,8 +47,12 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(minutes=update_interval_minutes),
         )
 
-    def update_interval_minutes(self, minutes: int) -> None:
-        """Update polling interval."""
+    def set_update_interval(self, minutes: int) -> None:
+        """Update the polling interval.
+
+        Note: the new interval takes effect at the next scheduled poll,
+        not immediately.
+        """
         self.update_interval = timedelta(minutes=minutes)
 
     def _extract_primary_temperature(
@@ -161,6 +165,47 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return None
 
+    def _classify_segment(
+        self,
+        ramp_rate: float,
+        target_temp: float,
+        previous_target: float | None,
+        hold_minutes: int,
+    ) -> tuple[float, str]:
+        """Classify a segment and return (ramp_minutes, kind).
+
+        Bartlett firmware uses ramp_rate = 9999 as an explicit AFAP marker.
+        ramp_rate = 0 is ambiguous: it means AFAP on some older firmware but
+        also appears on timed-hold segments.  We distinguish by comparing the
+        target temperature to the previous target:
+          - same temperature  → hold
+          - different temperature → treat as AFAP (ramp_minutes = 0)
+        """
+        if ramp_rate >= 9999:
+            return 0.0, "fast"
+
+        if ramp_rate <= 0:
+            if previous_target is not None and target_temp != previous_target:
+                # Different target with rate=0: almost certainly AFAP
+                return 0.0, "fast"
+            # Same target (or no previous): timed hold
+            return 0.0, "hold"
+
+        # Normal ramp
+        prev = previous_target if previous_target is not None else target_temp
+        ramp_minutes = abs(target_temp - prev) / ramp_rate * 60.0
+
+        if hold_minutes > 0:
+            kind = "ramp_hold"
+        elif target_temp > prev:
+            kind = "ramp_up"
+        elif target_temp < prev:
+            kind = "ramp_down"
+        else:
+            kind = "hold"
+
+        return ramp_minutes, kind
+
     def _build_target_curve(
         self,
         status: dict[str, Any],
@@ -226,25 +271,9 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except (TypeError, ValueError):
                 hold_minutes = 0
 
-            if previous_target is None:
-                previous_target = target_temp
-
-            if ramp_rate <= 0:
-                ramp_minutes = 0.0
-                segment_kind = "hold"
-            elif ramp_rate >= 9999:
-                ramp_minutes = 0.0
-                segment_kind = "fast"
-            else:
-                ramp_minutes = abs(target_temp - previous_target) / ramp_rate * 60.0
-                if hold_minutes > 0:
-                    segment_kind = "ramp_hold"
-                elif target_temp > previous_target:
-                    segment_kind = "ramp_up"
-                elif target_temp < previous_target:
-                    segment_kind = "ramp_down"
-                else:
-                    segment_kind = "hold"
+            ramp_minutes, segment_kind = self._classify_segment(
+                ramp_rate, target_temp, previous_target, hold_minutes
+            )
 
             start_minute = round(current_minute, 2)
             ramp_end_minute = round(current_minute + ramp_minutes, 2)
@@ -321,6 +350,16 @@ class KilnDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         mode = str(status.get("mode", "")).lower()
         active = "firing" in mode or "cooling" in mode
+
+        # Reset the consecutive view-failure counter when the kiln goes idle
+        # so that the first view failure in the next firing is not
+        # misclassified as part of a persisting failure streak.
+        if not active and self._consecutive_view_failures > 0:
+            _LOGGER.debug(
+                "Kiln %s is now idle; resetting consecutive view failure counter",
+                self.kiln_name,
+            )
+            self._consecutive_view_failures = 0
 
         need_summary = (
             not self._summary_cache

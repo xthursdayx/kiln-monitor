@@ -8,12 +8,11 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import KilnDataCoordinator
+from .entity import KilnEntity
 from .entity_descriptions import KilnSensorDescription, SENSOR_DESCRIPTIONS
 
 
@@ -24,20 +23,17 @@ async def async_setup_entry(
 ) -> None:
     """Set up kiln sensors."""
     coordinators: list[KilnDataCoordinator] = hass.data[DOMAIN][entry.entry_id]
-    entities: list[KilnSensor] = []
-
-    for coordinator in coordinators:
-        for description in SENSOR_DESCRIPTIONS:
-            entities.append(KilnSensor(coordinator, description))
-
-    async_add_entities(entities)
+    async_add_entities(
+        KilnSensor(coordinator, description)
+        for coordinator in coordinators
+        for description in SENSOR_DESCRIPTIONS
+    )
 
 
-class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
+class KilnSensor(KilnEntity, SensorEntity):
     """Representation of a kiln sensor."""
 
     entity_description: KilnSensorDescription
-    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -47,29 +43,11 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
         """Initialize sensor."""
         super().__init__(coordinator)
         self.entity_description = description
+        # unique_id uses the serial number so it survives kiln renames.
         self._attr_unique_id = f"{coordinator.serial_number}_{description.key}"
-        self._attr_name = description.name
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device info."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.coordinator.serial_number)},
-            name=self.coordinator.kiln_name,
-            manufacturer="Bartlett Instruments",
-            model=(
-                self._get_nested(self.coordinator.data, ("metadata", "product"))
-                or "KilnAid Kiln"
-            ),
-            serial_number=self.coordinator.serial_number,
-            sw_version=(
-                self._get_nested(self.coordinator.data, ("view", "status", "fw"))
-                or self._get_nested(
-                    self.coordinator.data,
-                    ("summary", "settings", "firmwareVersion"),
-                )
-            ),
-        )
+        # _attr_name is intentionally not set here.  With _attr_has_entity_name=True
+        # (inherited from KilnEntity), HA derives the entity name automatically
+        # from entity_description.name — setting it again would be redundant.
 
     @property
     def native_unit_of_measurement(self) -> str | None:
@@ -169,7 +147,7 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
         return None
 
     def _normalize_text_value(self, value: str) -> str:
-        """Normalize string-like sensor values."""
+        """Normalize string-like sensor values to a canonical zero form."""
         zero_like_map = {
             "estimated_time_remaining": "0h 0m",
             "hold_remaining_time": "0:00",
@@ -194,14 +172,3 @@ class KilnSensor(CoordinatorEntity[KilnDataCoordinator], SensorEntity):
                 return value
 
         return None
-
-    def _get_nested(self, data: Any, path: tuple[str, ...]) -> Any:
-        """Safely resolve nested path."""
-        current = data
-        for key in path:
-            if not isinstance(current, dict):
-                return None
-            current = current.get(key)
-            if current is None:
-                return None
-        return current

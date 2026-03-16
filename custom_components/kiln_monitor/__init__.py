@@ -83,4 +83,4 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     )
 
     for coordinator in coordinators:
-        coordinator.update_interval_minutes(update_interval)
+        coordinator.set_update_interval(update_interval)

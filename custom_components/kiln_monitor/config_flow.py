@@ -1,4 +1,5 @@
 """Config flow for Kiln Monitor integration."""
+
 from __future__ import annotations
 
 import logging
@@ -11,13 +12,13 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .api import KilnAPI, KilnAuthError, KilnConnectionError
 from .const import (
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
-    LOGIN_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,51 +32,24 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate credentials."""
+    """Validate credentials by performing a real authentication attempt.
+
+    Uses KilnAPI directly so there is a single source of truth for the
+    login logic, and so that the token obtained here is reused by the
+    coordinator rather than triggering a second login request.
+    """
     session = async_get_clientsession(hass)
-
-    login_headers = {
-        "Accept": "application/json",
-        "kaid-version": "kaid-plus",
-        "Sec-Fetch-Site": "cross-site",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Sec-Fetch-Mode": "cors",
-        "Content-Type": "application/json",
-        "Origin": "ionic://localhost",
-        "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
-        ),
-        "Connection": "keep-alive",
-        "Sec-Fetch-Dest": "empty",
-    }
-
-    login_payload = {
-        "email": data[CONF_EMAIL],
-        "password": data[CONF_PASSWORD],
-    }
+    api = KilnAPI(
+        session=session,
+        email=data[CONF_EMAIL],
+        password=data[CONF_PASSWORD],
+    )
 
     try:
-        async with session.post(
-            LOGIN_URL,
-            headers=login_headers,
-            json=login_payload,
-            timeout=30,
-        ) as resp:
-            if resp.status == 401:
-                raise InvalidAuth("Invalid email or password")
-            if resp.status != 200:
-                raise CannotConnect(f"Login failed with status {resp.status}")
-
-            auth_data = await resp.json()
-            token = auth_data.get("authentication_token")
-            if not token:
-                raise InvalidAuth("Authentication token missing from response")
-
-    except InvalidAuth:
-        raise
-    except Exception as exc:
-        _LOGGER.error("Failed to authenticate: %s", exc)
+        await api.authenticate()
+    except KilnAuthError as exc:
+        raise InvalidAuth from exc
+    except KilnConnectionError as exc:
         raise CannotConnect from exc
 
     return {"title": f"Kiln Monitor ({data[CONF_EMAIL]})"}
@@ -101,7 +75,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
             except Exception:
-                _LOGGER.exception("Unexpected exception")
+                _LOGGER.exception("Unexpected exception during config flow")
                 errors["base"] = "unknown"
             else:
                 await self.async_set_unique_id(user_input[CONF_EMAIL])
