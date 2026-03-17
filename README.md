@@ -1,366 +1,320 @@
-# Kiln Monitor (Home Assistant Integration)
+# Kiln Monitor
 
-A Home Assistant custom integration for monitoring **Bartlett Instruments KilnAid-enabled kilns**.
+A Home Assistant custom integration for monitoring **Bartlett Instruments
+KilnAid-enabled kilns**.
 
-This integration connects to the KilnAid cloud API and exposes kiln telemetry, firing progress, program information, and diagnostic data inside Home Assistant.
-
-It supports **multiple kilns per account** and provides both **sensor entities** and **binary sensors** suitable for dashboards and automations.
-
----
-
-# Features
-
-* Monitor kiln **temperature and firing status**
-* Track **thermocouple temperatures per zone**
-* See **current firing program and segment**
-* Monitor **estimated time remaining**
-* Track **firing duration and hold time**
-* Access **diagnostic telemetry**
-
-  * element amperage
-  * voltage
-  * board temperature
-* Binary sensors for automation
-
-  * firing active
-  * firing complete
-  * cooling
-  * kiln fault
-  * alarm active
+Connects to the KilnAid cloud API and exposes kiln telemetry, firing progress,
+program information, target firing curve data, and diagnostic sensors inside
+Home Assistant. Supports **multiple kilns per account**.
 
 ---
 
-# Installation
+## Installation
 
-## Install via HACS
+### Via HACS (recommended)
 
-1. Install **HACS** if you don't already have it.
-2. Go to:
+1. Install [HACS](https://hacs.xyz) if you do not already have it.
+2. Go to **HACS -> Integrations -> Custom repositories**.
+3. Add this repository (`xthursdayx/kiln-monitor`) as an **Integration**.
+4. Install **Kiln Monitor** and restart Home Assistant.
 
-HACS → Integrations → Custom repositories
+### Manual
 
-3. Add your fork of this repository.
-
-Repository type:
-
-Integration
-
-4. Install **Kiln Monitor**
-5. Restart Home Assistant.
+Copy the `custom_components/kiln_monitor/` folder into your Home Assistant
+`config/custom_components/` directory and restart.
 
 ---
 
-# Configuration
+## Configuration
 
-After installation:
+1. Go to **Settings -> Devices & Services -> Add Integration**.
+2. Search for **Kiln Monitor**.
+3. Enter your KilnAid account credentials (the same email and password used
+   in the KilnAid mobile app).
 
-1. Go to:
+The integration automatically discovers all kilns associated with your account.
 
-Settings → Devices & Services → Add Integration
+### Options
 
-2. Search for:
+After setup, the polling interval can be adjusted under the integration options:
 
-Kiln Monitor
-
-3. Enter your **KilnAid account credentials**
-
-Email
-Password
-
-The integration will automatically discover the kilns associated with your account.
+- **Update interval** -- how often to poll the KilnAid API (5-60 minutes,
+  default 5). During an active firing, shorter intervals give more responsive
+  dashboards and automations.
 
 ---
 
-# Entities
-
-## Sensors
+## Entities
 
 ### Temperature Sensors
 
-| Entity          | Description                   |
-| --------------- | ----------------------------- |
-| Temperature     | Primary kiln temperature      |
-| Thermocouple 1  | Zone 1 temperature            |
-| Thermocouple 2  | Zone 2 temperature            |
-| Thermocouple 3  | Zone 3 temperature            |
-| Set Point       | Current target temperature    |
-| Max Temperature | Maximum temperature of firing |
-
----
+| Entity | Description | Notes |
+|---|---|---|
+| Temperature | Primary kiln temperature | |
+| Thermocouple 1 | Zone 1 temperature | |
+| Thermocouple 2 | Zone 2 temperature | |
+| Thermocouple 3 | Zone 3 temperature | |
+| Set Point | Current target temperature | |
+| Max Temperature | Peak temperature of current firing | |
 
 ### Firing Status
 
-| Entity                   | Description                           |
-| ------------------------ | ------------------------------------- |
-| Kiln Status              | Current mode (Firing, Complete, Idle) |
-| Program Name             | Current firing program                |
-| Current Segment          | Segment currently running             |
-| Estimated Time Remaining | Remaining firing time                 |
-| Hold Remaining Time      | Remaining hold time                   |
-| Firing Time              | Total elapsed firing time             |
+| Entity | Description | Notes |
+|---|---|---|
+| Status | Current mode (Firing, Complete, Idle, Cooling) | |
+| Program Name | Active firing program name | Attributes include raw program segments and steps |
+| Current Segment | Segment number currently running | |
+| Estimated Time Remaining | Remaining time in current firing | |
+| Hold Remaining Time | Remaining time in current hold | |
+| Firing Time | Total elapsed firing time | |
 
----
+### Firing Analysis
+
+| Entity | Description | Notes |
+|---|---|---|
+| Cooling Rate | Rate of temperature change during cooling (deg/h) | Positive value; 0 when not cooling |
+| Target Firing Curve | Summary of the programmed firing schedule | Attributes contain full target_points and segments arrays for charting |
+
+The `Target Firing Curve` sensor exposes a `target_points` attribute -- a list
+of `{minute, temp, label}` objects representing the programmed temperature
+profile. Time-shifting this list to the session start time and overlaying it on
+the live temperature history gives an actual-vs-planned firing curve chart.
 
 ### Program Information
 
-| Entity             | Description                  |
-| ------------------ | ---------------------------- |
-| Program Type       | Type of firing program       |
-| Program Speed      | Speed (slow / medium / fast) |
-| Program Cone       | Cone rating                  |
-| Program Step Count | Number of segments           |
-
----
+| Entity | Description | Category |
+|---|---|---|
+| Program Type | Type of firing program | Diagnostic |
+| Program Speed | Speed (slow / medium / fast) | Diagnostic |
+| Program Cone | Cone rating | Diagnostic |
+| Program Step Count | Number of segments | Diagnostic |
 
 ### Kiln Metadata
 
-| Entity            | Description             |
-| ----------------- | ----------------------- |
-| Firmware Version  | Controller firmware     |
-| Number of Firings | Lifetime firing count   |
-| Zone Count        | Number of thermocouples |
+| Entity | Description | Category |
+|---|---|---|
+| Firmware Version | Controller firmware version | Diagnostic |
+| Number of Firings | Lifetime firing count | Diagnostic |
+| Zone Count | Number of thermocouples | Diagnostic |
 
----
+### Firing Cost and Peak
 
-### Diagnostics Sensors
+| Entity | Description | Notes |
+|---|---|---|
+| Firing Cost | Estimated cost of current or last firing | Disabled by default |
+| Max Temperature | Peak temperature reached this firing | Disabled by default |
 
-These are **disabled by default**.
+### Diagnostics
 
-| Entity            | Description                  |
-| ----------------- | ---------------------------- |
+These sensors are disabled by default. Enable them under
+**Settings -> Devices -> (your kiln) -> Entities**.
+
+| Entity | Description |
+|---|---|
 | Board Temperature | Controller board temperature |
-| Amperage 1        | Element 1 amperage           |
-| Amperage 2        | Element 2 amperage           |
-| Amperage 3        | Element 3 amperage           |
-| Voltage 1         | Element 1 voltage            |
-| Voltage 2         | Element 2 voltage            |
-| Voltage 3         | Element 3 voltage            |
-| Supply Voltage    | Power supply voltage         |
-| No Load Voltage   | Voltage with no load         |
-| Full Load Voltage | Voltage under load           |
-| Last Error Code   | Last kiln error code         |
-
-These sensors are useful for diagnosing element failures or electrical issues.
+| Amperage 1 / 2 / 3 | Element amperage per zone |
+| Voltage 1 / 2 / 3 | Element voltage per zone |
+| Supply Voltage | Power supply voltage |
+| No-Load Voltage | Voltage with no load |
+| Full-Load Voltage | Voltage under full load |
+| Error Text | Human-readable error description |
+| Error Number | Numeric error code |
+| Last Error Code | Most recent error code from diagnostics |
 
 ---
 
-# Binary Sensors
+## Binary Sensors
 
-Binary sensors make automations easier.
+| Entity | Description | Useful for |
+|---|---|---|
+| Firing Active | True while kiln is firing | Session tracking, notifications |
+| Cooling Active | True while kiln is in API-reported cooling | Safe-to-open automations |
+| Firing Complete | True when firing program finishes | Session end, notifications |
+| Alarm Active | True when kiln alarm is active | Alert automations |
+| Kiln Fault | True if kiln reports an error | Fault alert automations |
 
-| Entity          | Description                   |
-| --------------- | ----------------------------- |
-| Firing Active   | True while kiln firing        |
-| Cooling Active  | True while kiln cooling       |
-| Firing Complete | True when firing finished     |
-| Alarm Active    | True when kiln alarm active   |
-| Kiln Fault      | True if kiln reports an error |
+**Note:** `Cooling Active` reflects what the KilnAid API reports. Custom
+firing programs that use a final AFAP-to-150F segment to keep the ventilation
+fan running will not set `Cooling Active` during that phase. See the
+[Custom Program Cooling](#custom-program-cooling) section below.
 
 ---
 
-# Example Automations
+## API Endpoints
 
-## Notify when firing completes
+| Endpoint | Called when | Provides |
+|---|---|---|
+| `/kilnaid-data/status` | Every update | Temperature, status, program, ETR, alarms, errors |
+| `/kilns/data` | Every update | Kiln name, firmware, zone count, firings |
+| `/kilns/view` | Every update during firing; periodically when idle | Amperage, voltage, board temp, program steps, firing cost |
 
+The `/kilns/view` endpoint is rate-limited to reduce unnecessary API calls
+during idle periods (`IDLE_VIEW_REFRESH_EVERY = 6` polls).
+
+---
+
+## Custom Program Cooling
+
+Some custom Bartlett firing programs append a final segment of the form:
+
+```
+Rate: 9999 F/hr  Target: 150F  Hold: 0 min
+```
+
+This keeps the ventilation fan running through the full cool-down. However,
+the KilnAid API continues to report `mode: firing` during this segment, so
+the `Cooling Active` binary sensor never activates.
+
+The recommended workaround is to add a template binary sensor in Home
+Assistant that detects this condition by checking `Set Point <= 150` while a
+firing session is active and the program name matches a known custom program:
+
+```yaml
+- binary_sensor:
+    - name: Kiln Actually Cooling
+      unique_id: kiln_actually_cooling
+      state: >
+        {% set custom_programs = ['C6DAS'] %}
+        {{
+          is_state('binary_sensor.kiln_cooling_active', 'on')
+          or (
+            is_state('input_boolean.kiln_firing_session_active', 'on')
+            and states('sensor.kiln_program_name') in custom_programs
+            and states('sensor.kiln_set_point') | float(9999) <= 150
+          )
+        }}
+```
+
+Use this sensor in place of `cooling_active` in safe-to-open automations.
+
+---
+
+## Example Automations
+
+### Notify when firing starts
+
+```yaml
+alias: Kiln Firing Started
+trigger:
+  - platform: state
+    entity_id: binary_sensor.kiln_firing_active
+    to: "on"
+action:
+  - action: notify.mobile_app_phone
+    data:
+      message: >-
+        Firing started.
+        Program: {{ states('sensor.kiln_program_name') }}.
+```
+
+### Notify when firing completes
+
+```yaml
 alias: Kiln Firing Complete
 trigger:
-
-* platform: state
-  entity_id: binary_sensor.kiln_firing_complete
-  to: "on"
-
+  - platform: state
+    entity_id: binary_sensor.kiln_firing_complete
+    to: "on"
+    for: "00:00:30"
 action:
+  - action: notify.mobile_app_phone
+    data:
+      message: >-
+        Firing finished.
+        Peak: {{ states('sensor.kiln_max_temperature') }}F.
+        Cost: ${{ states('sensor.kiln_firing_cost') }}.
+```
 
-* service: notify.mobile_app_phone
-  data:
-  message: "Your kiln firing is complete."
+### Alert on kiln fault
 
----
-
-## Alert on kiln fault
-
+```yaml
 alias: Kiln Fault Alert
 trigger:
-
-* platform: state
-  entity_id: binary_sensor.kiln_fault
-  to: "on"
-
+  - platform: state
+    entity_id: binary_sensor.kiln_kiln_fault
+    to: "on"
+    for: "00:01:00"
 action:
+  - action: notify.mobile_app_phone
+    data:
+      message: >-
+        Kiln fault detected.
+        Error: {{ states('sensor.kiln_error_text') }}.
+```
 
-* service: notify.mobile_app_phone
-  data:
-  message: "Kiln fault detected!"
+### Notify when safe to open
 
----
-
-## Notify when firing begins
-
-alias: Kiln Started Firing
+```yaml
+alias: Kiln Safe to Open
 trigger:
-
-* platform: state
-  entity_id: binary_sensor.kiln_firing_active
-  to: "on"
-
+  - platform: numeric_state
+    entity_id: sensor.kiln_temperature
+    below: 200
+condition:
+  - condition: state
+    entity_id: binary_sensor.kiln_cooling_active
+    state: "on"
 action:
-
-* service: notify.mobile_app_phone
-  data:
-  message: "Kiln firing has started."
-
----
-
-# API Endpoints Used
-
-The integration uses several KilnAid API endpoints.
-
-## Primary Live Data
-
-/kilnaid-data/status
-
-Provides:
-
-* thermocouple temperatures
-* firing status
-* program name
-* current segment
-* estimated time remaining
-* hold time
-* firing time
-* alarms
-* errors
-
-This endpoint is the **primary polling source**.
+  - action: notify.mobile_app_phone
+    data:
+      message: "Kiln is below 200F -- safe to open."
+```
 
 ---
 
-## Summary Metadata
-
-/kilns/data
-
-Provides:
-
-* kiln name
-* firmware version
-* number of zones
-* number of firings
-* current temperature fallback
-
----
-
-## Diagnostic Data
-
-/kilns/view
-
-Provides:
-
-* amperage
-* voltage
-* board temperature
-* diagnostic error codes
-* firing cost
-* program details
-
-This endpoint is called **only when needed** to reduce API load.
-
----
-
-# API Call Strategy
-
-To minimize unnecessary calls:
-
-| Endpoint               | When Used                               |
-| ---------------------- | --------------------------------------- |
-| `/kilnaid-data/status` | every update                            |
-| `/kilns/data`          | every update                            |
-| `/kilns/view`          | during firing or occasionally when idle |
-
----
-
-# Troubleshooting
+## Troubleshooting
 
 ### Integration cannot connect
 
-Verify your credentials are correct.
-
-The login uses the same credentials as the **KilnAid mobile app**.
-
----
+Verify that the credentials match the KilnAid mobile app. The login endpoint
+is `bartinst-user-service-prod.herokuapp.com`.
 
 ### Sensors unavailable
 
-Ensure the kiln:
-
-* is powered
-* is connected to WiFi
-* appears in the KilnAid app
-
----
+Ensure the kiln is powered on, connected to WiFi, and visible in the KilnAid
+mobile app. The integration cannot reach the API if the kiln is offline.
 
 ### Diagnostic sensors not visible
 
-They may be **disabled by default**.
+Diagnostic sensors are disabled by default. Enable them under
+**Settings -> Devices -> (your kiln) -> Entities -> show disabled**.
 
-Enable them in:
+### Blocking call warning in HA logs (Python 3.14+)
 
-Settings → Devices → Kiln → Entities
-
----
-
-# Roadmap / Future Improvements
-
-Planned enhancements:
-
-### Firing Chart
-
-Support for:
-
-/singleFiring/{externalId}
-
-This will allow:
-
-* live firing curve charts
-* comparison to programmed firing profile
+If you see a `Detected blocking call to import_module` warning, ensure you
+have the latest version of the integration. The `__init__.py` pre-imports
+both platform modules at load time to prevent this.
 
 ---
 
-### Cooling Rate Sensor
+## Roadmap
 
-Expose a cooling rate sensor (°/hour).
+### Historical Firing Data
 
-This allows monitoring kiln cooling speed for glaze firing analysis.
+Support for the `/singleFiring/{externalId}` API endpoint to retrieve the
+programmed firing profile for any completed firing by its external ID. This
+will enable:
 
----
+- Overlay of actual vs planned firing curve for historical firings
+- Retrieval of firing cost, peak temperature, and duration per firing directly
+  from the API
 
 ### Historical Firing Statistics
 
-Track:
+Aggregate metrics across multiple firings:
 
-* total firing hours
-* average firing duration
-* average firing cost
-
----
-
-### Energy Cost Tracking
-
-Track firing energy usage and cost over time.
+- Total firing hours
+- Average firing duration
+- Average firing cost per cone
 
 ---
 
-# Disclaimer
+## Disclaimer
 
-This integration is **not affiliated with Bartlett Instruments**.
+This integration is not affiliated with or endorsed by Bartlett Instruments.
+Use at your own risk. Always monitor kiln firings responsibly.
 
-Use at your own risk.
+## Contributing
 
-Always monitor kiln firings responsibly.
-
----
-
-# Contributions
-
-Pull requests are welcome.
-
-If you improve the integration or add features, please consider submitting a PR.
+Pull requests are welcome. If you improve the integration or fix a bug, please
+open a PR against the main branch.
